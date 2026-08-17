@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6fed">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>가계부</title>
+  <!-- 가계부 앱 — 화면. Apps Script(doGet)와 정적 호스팅 양쪽에서 동일하게 동작합니다.
+       데이터는 모두 POST /exec (JSON API)로 주고받고, 서버 주소는 코드에 넣지 않습니다. -->
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e6e8eb; --ink:#1a1d21; --sub:#6b7280;
+    --accent:#2f6fed; --good:#0f9d58; --warn:#e8a33d; --bad:#d93a3a;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif;
+    font-size:15px;line-height:1.45;padding-bottom:76px}
+  header{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);
+    padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  header h1{font-size:16px;margin:0;font-weight:700}
+  header .mon{font-size:13px;color:var(--sub);margin-left:auto}
+  main{padding:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;margin-bottom:12px}
+  .card h2{font-size:13px;margin:0 0 10px;color:var(--sub);font-weight:600;letter-spacing:.02em}
+  label{display:block;font-size:12px;color:var(--sub);margin:10px 0 5px}
+  input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;
+    font-size:16px;background:#fff;font-family:inherit}
+  input[inputmode=numeric]{font-size:26px;font-weight:700;text-align:right;letter-spacing:-.01em}
+  #g-pin{font-size:22px;text-align:center;letter-spacing:.3em}
+  button{border:0;border-radius:10px;padding:13px;font-size:15px;font-weight:600;
+    background:var(--accent);color:#fff;width:100%;font-family:inherit}
+  button:active{opacity:.85}
+  button.ghost{background:#eef1f6;color:var(--ink)}
+  button.mini{width:auto;padding:7px 12px;font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;
+    font-size:13px;color:var(--ink)}
+  .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .kpi div{background:#fafbfc;border:1px solid var(--line);border-radius:12px;padding:11px}
+  .kpi .l{font-size:11px;color:var(--sub)}
+  .kpi .v{font-size:18px;font-weight:700;margin-top:3px;letter-spacing:-.02em}
+  .bar{height:7px;background:#eef1f6;border-radius:99px;overflow:hidden;margin-top:5px}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .bar i.w{background:var(--warn)} .bar i.b{background:var(--bad)}
+  .line{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:13px;padding:9px 0;border-bottom:1px solid #f0f2f4}
+  .line:last-child{border-bottom:0}
+  .line .r{color:var(--sub);font-size:12px;white-space:nowrap;margin-left:8px}
+  .neg{color:var(--bad)} .pos{color:var(--good)}
+  nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);
+    border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+  nav button{background:none;color:var(--sub);border-radius:0;padding:10px 0 14px;
+    font-size:11px;font-weight:600}
+  nav button.on{color:var(--accent)}
+  nav button b{display:block;font-size:17px;font-weight:400;margin-bottom:1px}
+  /* PC 레이아웃의 #v-sum{display:grid} 보다 우선해야 하므로 !important */
+  .hide{display:none !important}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:#1a1d21;
+    color:#fff;padding:11px 18px;border-radius:99px;font-size:13px;z-index:50;opacity:0;
+    transition:opacity .2s;pointer-events:none}
+  .toast.on{opacity:1}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:7px 0;border-bottom:1px solid #f0f2f4}
+  td.a{text-align:right;font-weight:600}
+  td input{padding:8px;font-size:15px;text-align:right}
+  .muted{color:var(--sub);font-size:12px;margin-top:8px}
+  button,.chip,nav button{cursor:pointer}
+
+  /* 로그인 · 최초 설정 화면 */
+  #gate{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;
+    align-items:center;justify-content:center;padding:20px}
+  .gcard{background:var(--card);border:1px solid var(--line);border-radius:18px;
+    padding:26px 22px;width:100%;max-width:380px}
+  .gcard h1{font-size:20px;margin:0 0 4px}
+  .gcard .sub{font-size:13px;color:var(--sub);margin:0 0 18px}
+  #g-msg{min-height:18px;color:var(--bad)}
+  .gtoggle{background:none;color:var(--accent);font-size:12px;width:auto;padding:6px 0;font-weight:600}
+
+  /* 월 · 연도 이동 */
+  .mswitch{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .mswitch b{font-size:16px;letter-spacing:-.01em}
+  .mswitch button{width:34px;padding:6px 0;font-size:16px;line-height:1}
+  .mswitch button:last-child{width:auto;padding:6px 12px;font-size:12px}
+
+  /* 월별 표 */
+  .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ytab{min-width:520px}
+  .ytab th{font-size:11px;color:var(--sub);font-weight:600;text-align:right;
+    padding:0 0 7px;border-bottom:1px solid var(--line)}
+  .ytab th:first-child{text-align:left}
+  .ytab td{vertical-align:middle}
+  .yrow{cursor:pointer}
+  .yrow:hover td{background:#f7f9fc}
+  .sbar{display:flex;height:5px;border-radius:99px;overflow:hidden;background:#f0f2f4;margin-top:4px}
+  .sbar i{display:block;height:100%}
+  .legend{display:flex;gap:12px;font-size:11px;color:var(--sub);margin-top:10px;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:4px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:block}
+
+  /* ===== PC / 태블릿 가로 (900px 이상) ===== */
+  @media (min-width:900px){
+    body{padding-bottom:0;padding-left:210px;font-size:14px}
+    header{padding:15px 26px}
+    header h1{font-size:18px}
+    header .mon{font-size:14px}
+
+    nav{flex-direction:column;top:0;bottom:0;right:auto;width:210px;
+        border-top:0;border-right:1px solid var(--line);padding-top:12px}
+    nav button{display:flex;align-items:center;gap:11px;text-align:left;
+               padding:12px 22px;font-size:14px;border-radius:0}
+    nav button b{display:inline;font-size:17px;margin:0}
+    nav button.on{background:#eef3fb}
+    nav button:hover{background:#f4f6f9}
+
+    main{max-width:1000px;padding:22px 26px}
+    .card{padding:18px}
+    .kpi{grid-template-columns:repeat(4,1fr)}
+
+    #v-sum,#v-move{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    #v-sum .card,#v-move .card{margin-bottom:0}
+    #v-sum>.card:first-child{grid-column:1 / -1}
+
+    #v-add .card,#v-batch .card{max-width:660px}
+    input,select,textarea{font-size:14px;padding:10px}
+    input[inputmode=numeric]{font-size:24px}
+    button{padding:11px;font-size:14px}
+    .chip{padding:7px 13px}
+    td input{font-size:14px}
+  }
+  @media (min-width:1400px){
+    main{max-width:1180px}
+    #v-add .card,#v-batch .card{max-width:720px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 로그인 / 최초 설정 ========== -->
+<div id="gate">
+  <div class="gcard">
+    <h1>🧾 가계부</h1>
+    <p class="sub" id="g-sub">PIN을 입력하세요</p>
+
+    <div id="g-apiwrap" class="hide">
+      <label>앱 서버 주소 (이 기기에 한 번만)</label>
+      <input id="g-api" placeholder="https://.../exec" autocomplete="off"
+             autocapitalize="off" spellcheck="false">
+    </div>
+
+    <label>PIN</label>
+    <input id="g-pin" type="password" inputmode="numeric" placeholder="••••••" autocomplete="current-password">
+
+    <div style="height:14px"></div>
+    <button onclick="doLogin()">열기</button>
+    <p class="muted" id="g-msg"></p>
+    <button class="gtoggle" onclick="toggleApiField()" id="g-toggle">서버 주소 변경</button>
+    <p class="muted">주소와 PIN은 시트 메뉴 <b>[가계부]</b> 에서 확인·설정할 수 있습니다.
+      입력한 값은 이 기기에만 저장되며 서버로 전송되는 건 PIN 확인 요청뿐입니다.</p>
+  </div>
+</div>
+
+<!-- ========== 앱 본체 ========== -->
+<div id="app" class="hide">
+
+<header>
+  <h1>🧾 가계부</h1>
+  <span class="mon" id="mon">…</span>
+  <button class="mini ghost" onclick="logout()">잠금</button>
+</header>
+
+<main>
+  <!-- ========== 기록 ========== -->
+  <section id="v-add">
+    <div class="card">
+      <h2>금액</h2>
+      <input id="amt" inputmode="numeric" placeholder="0" autocomplete="off">
+      <div class="chips" id="quick"></div>
+
+      <label>구분</label>
+      <div class="chips" id="gubun"></div>
+
+      <label>항목</label>
+      <div class="chips" id="cats"></div>
+
+      <label>결제수단</label>
+      <div class="chips" id="methods"></div>
+
+      <div class="row">
+        <div><label>날짜</label><input type="date" id="date"></div>
+      </div>
+      <label>메모</label>
+      <input id="memo" placeholder="선택 입력" autocomplete="off">
+      <div style="height:12px"></div>
+      <button onclick="save()">저장</button>
+    </div>
+  </section>
+
+  <!-- ========== 일괄 ========== -->
+  <section id="v-batch" class="hide">
+    <div class="card">
+      <h2>카드앱 카테고리 합계 일괄 입력</h2>
+      <label>카드</label>
+      <div class="chips" id="bmethods"></div>
+      <label>기준 월</label>
+      <input id="bmonth" placeholder="2026-08">
+      <table id="btable"></table>
+      <div style="height:12px"></div>
+      <button onclick="saveBatch()">일괄 저장</button>
+      <p class="muted">입력한 카드의 카테고리별 합계가 해당 월 말일 자로 원장에 기록됩니다.
+        같은 카드를 두 번 저장하면 중복되니 주의하세요.</p>
+    </div>
+  </section>
+
+  <!-- ========== 요약 ========== -->
+  <section id="v-sum" class="hide">
+    <div class="card">
+      <div class="mswitch">
+        <button class="mini ghost" onclick="shiftMonth(-1)">‹</button>
+        <b id="s-month">–</b>
+        <button class="mini ghost" onclick="shiftMonth(1)">›</button>
+        <button class="mini ghost" onclick="goThisMonth()" style="margin-left:auto">이번 달</button>
+      </div>
+      <div class="kpi">
+        <div><div class="l">수입</div><div class="v" id="s-in">–</div></div>
+        <div><div class="l">지출</div><div class="v" id="s-out">–</div></div>
+        <div><div class="l">저축·투자</div><div class="v" id="s-sav">–</div></div>
+        <div><div class="l">잔액</div><div class="v" id="s-bal">–</div></div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="line"><span>저축률</span><b id="s-rate">–</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>변동지출 · 예산 대비</h2>
+      <div id="s-cats"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="s-cardhead">카드 대금</h2>
+      <div id="s-cards"></div>
+    </div>
+  </section>
+
+  <!-- ========== 월별 ========== -->
+  <section id="v-year" class="hide">
+    <div class="card">
+      <div class="mswitch">
+        <button class="mini ghost" onclick="shiftYear(-1)">‹</button>
+        <b id="y-year">–</b>
+        <button class="mini ghost" onclick="shiftYear(1)">›</button>
+      </div>
+      <div class="kpi">
+        <div><div class="l">연 수입</div><div class="v" id="y-in">–</div></div>
+        <div><div class="l">연 지출</div><div class="v" id="y-out">–</div></div>
+        <div><div class="l">연 저축</div><div class="v" id="y-sav">–</div></div>
+        <div><div class="l">누적 잔액</div><div class="v" id="y-bal">–</div></div>
+      </div>
+      <p class="muted" id="y-avg">–</p>
+    </div>
+
+    <div class="card">
+      <h2>월별 흐름 · 행을 누르면 그 달 요약으로 이동</h2>
+      <div class="scrollx"><table class="ytab" id="y-table"></table></div>
+      <div class="legend">
+        <span><i style="background:#5b8def"></i>고정지출</span>
+        <span><i style="background:#e8a33d"></i>변동지출</span>
+        <span><i style="background:#a06be0"></i>일회성지출</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 이사 ========== -->
+  <section id="v-move" class="hide">
+    <div class="card">
+      <h2>가전 · 가구 예산</h2>
+      <div class="kpi">
+        <div><div class="l">사용</div><div class="v" id="m-used">–</div></div>
+        <div><div class="l">남음</div><div class="v" id="m-left">–</div></div>
+      </div>
+      <div class="bar" style="margin-top:10px"><i id="m-bar" style="width:0"></i></div>
+      <div id="m-months" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>이사 일회성 지출 누계</h2>
+      <div class="line"><span>일회성 지출 합계</span><b id="m-once">–</b></div>
+    </div>
+
+    <div class="card">
+      <h2>구매 예정</h2>
+      <div id="m-wish"></div>
+      <div class="row" style="margin-top:10px">
+        <input id="w-name" placeholder="항목 이름">
+        <button class="mini" onclick="addWish()">추가</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 내역 ========== -->
+  <section id="v-log" class="hide">
+    <div class="card">
+      <h2>최근 입력</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button class="on" data-v="add"><b>＋</b>기록</button>
+  <button data-v="batch"><b>▤</b>일괄</button>
+  <button data-v="sum"><b>◐</b>요약</button>
+  <button data-v="year"><b>📈</b>월별</button>
+  <button data-v="move"><b>🏠</b>이사</button>
+  <button data-v="log"><b>≡</b>내역</button>
+</nav>
+
+</div><!-- /#app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 상태 ================= */
+var API   = localStorage.getItem('gb_api')   || '';
+var TOKEN = localStorage.getItem('gb_token') || '';
+var BOOT = null, curMonth = null, curYear = null;
+var sel = { gubun: '변동지출', cat: null, method: null, bmethod: null };
+var TABS = ['add','batch','sum','year','move','log'];
+
+function won(n){ return (Math.round(n)||0).toLocaleString('ko-KR') + '원'; }
+function $(id){ return document.getElementById(id); }
+function toast(m){ var t=$('toast'); t.textContent=m; t.classList.add('on');
+  setTimeout(function(){ t.classList.remove('on'); }, 1800); }
+
+/* ================= API ================= */
+/* Content-Type을 text/plain 으로 보내 CORS 프리플라이트를 피합니다.
+   (Apps Script 웹앱은 프리플라이트에 응답하지 않습니다) */
+function post(body){
+  return fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+    redirect: 'follow'
+  }).then(function(r){ return r.json(); });
+}
+
+function api(action, body){
+  body = body || {};
+  body.action = action;
+  body.token  = TOKEN;
+  return post(body).then(function(d){
+    if (d && d.needLogin) { logout(); throw new Error('AUTH'); }
+    if (d && d.error)     throw new Error(d.error);
+    return d;
+  });
+}
+
+function fail(e){ if (String(e && e.message) !== 'AUTH') toast('불러오지 못했습니다'); }
+
+/* ================= 로그인 게이트 ================= */
+function gmsg(m){ $('g-msg').textContent = m || ''; }
+
+function toggleApiField(){
+  var w = $('g-apiwrap');
+  w.classList.toggle('hide');
+  if (!w.classList.contains('hide')) $('g-api').value = API;
+}
+
+function showGate(){
+  $('gate').classList.remove('hide');
+  $('app').classList.add('hide');
+  if (!API) {
+    $('g-apiwrap').classList.remove('hide');
+    $('g-toggle').classList.add('hide');
+    $('g-sub').textContent = '처음이시네요. 서버 주소와 PIN을 입력하세요.';
+  } else {
+    $('g-sub').textContent = 'PIN을 입력하세요';
+  }
+  setTimeout(function(){ ($('g-api').value || API ? $('g-pin') : $('g-api')).focus(); }, 200);
+}
+
+function doLogin(){
+  var wrapOpen = !$('g-apiwrap').classList.contains('hide');
+  var url = (wrapOpen ? $('g-api').value : API).trim();
+  var pin = $('g-pin').value.trim();
+
+  if (!url) { gmsg('서버 주소를 입력하세요'); return; }
+  if (!/\/exec\/?$/.test(url)) { gmsg('주소는 /exec 로 끝나야 합니다'); return; }
+  if (!pin) { gmsg('PIN을 입력하세요'); return; }
+
+  API = url.replace(/\/$/, '');
+  gmsg('확인 중…');
+
+  post({ action: 'login', pin: pin }).then(function(d){
+    if (d && d.ok) {
+      TOKEN = d.token;
+      localStorage.setItem('gb_api', API);
+      localStorage.setItem('gb_token', TOKEN);
+      $('g-pin').value = '';
+      gmsg('');
+      enterApp();
+      return;
+    }
+    if (d && d.locked)      gmsg('실패가 반복돼 잠겼습니다. ' + Math.ceil(d.waitSec/60) + '분 후 다시 시도하세요.');
+    else if (d && d.noPin)  gmsg('PIN이 아직 없습니다. 시트 메뉴 [가계부] → 🔒 앱 PIN 설정에서 먼저 정하세요.');
+    else                    gmsg('PIN이 맞지 않습니다.' + (d && d.remain != null ? ' 남은 시도 ' + d.remain + '회' : ''));
+  }).catch(function(){
+    gmsg('서버에 연결하지 못했습니다. 주소가 정확한지 확인하세요.');
+  });
+}
+
+function logout(){
+  TOKEN = '';
+  localStorage.removeItem('gb_token');
+  showGate();
+}
+
+$('g-pin').addEventListener('keydown', function(e){ if (e.key === 'Enter') doLogin(); });
+
+/* ================= 부팅 ================= */
+function enterApp(){
+  $('gate').classList.add('hide');
+  $('app').classList.remove('hide');
+
+  api('bootstrap').then(function(b){
+    BOOT = b;
+    curMonth = b.month;
+    curYear  = Number(b.month.split('-')[0]);
+    $('mon').textContent = b.month;
+    $('date').value = b.today;
+    $('bmonth').value = b.month;
+
+    chips($('quick'), ['1,000','5,000','10,000','30,000','50,000'], null, function(v){
+      $('amt').value = v;
+    });
+    sel.bmethod = sel.bmethod || (b.cards && b.cards[0]) || '';
+    renderAdd();
+    renderBatchChips();
+    renderBatch();
+  }).catch(fail);
+}
+
+/* 저장된 토큰이 아직 유효한지 확인하고 바로 진입 */
+(function init(){
+  if (!API || !TOKEN) { showGate(); return; }
+  post({ action: 'ping', token: TOKEN }).then(function(d){
+    if (d && d.auth) enterApp(); else showGate();
+  }).catch(function(){ showGate(); });
+})();
+
+/* ================= 탭 ================= */
+function showTab(v){
+  document.querySelectorAll('nav button').forEach(function(x){
+    x.classList.toggle('on', x.dataset.v === v);
+  });
+  TABS.forEach(function(k){ $('v-'+k).classList.toggle('hide', k !== v); });
+  if (v === 'sum')  loadSummary();
+  if (v === 'year') loadYearly();
+  if (v === 'move') loadMoving();
+  if (v === 'log')  loadLog();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('nav button').forEach(function(b){
+  b.onclick = function(){ showTab(b.dataset.v); };
+});
+
+/* ================= 월 · 연도 이동 ================= */
+function shiftMonth(d){
+  var y = Number(curMonth.split('-')[0]), m = Number(curMonth.split('-')[1]) + d;
+  if (m < 1)  { y--; m = 12; }
+  if (m > 12) { y++; m = 1; }
+  curMonth = y + '-' + ('0' + m).slice(-2);
+  loadSummary();
+}
+function goThisMonth(){ curMonth = BOOT.month; loadSummary(); }
+function shiftYear(d){ curYear += d; loadYearly(); }
+function jumpMonth(key){ curMonth = key; showTab('sum'); }
+
+/* ================= 칩 ================= */
+function chips(el, items, current, onPick){
+  el.innerHTML = '';
+  items.forEach(function(it){
+    var c = document.createElement('button');
+    c.type = 'button';
+    c.className = 'chip' + (it === current ? ' on' : '');
+    c.textContent = it;
+    c.onclick = function(){ onPick(it); };
+    el.appendChild(c);
+  });
+}
+
+function renderAdd(){
+  var sec = BOOT.sections.filter(function(s){ return s.key === sel.gubun; })[0];
+  chips($('gubun'), BOOT.sections.map(function(s){ return s.key; }), sel.gubun, function(v){
+    sel.gubun = v; sel.cat = null; renderAdd();
+  });
+  chips($('cats'), sec.items, sel.cat, function(v){ sel.cat = v; renderAdd(); });
+  chips($('methods'), BOOT.methods, sel.method, function(v){ sel.method = v; renderAdd(); });
+}
+
+/* ================= 기록 ================= */
+function save(){
+  var amt = $('amt').value;
+  if (!amt)     { toast('금액을 입력하세요'); return; }
+  if (!sel.cat) { toast('항목을 선택하세요'); return; }
+
+  api('add', { entry: {
+    amount: amt, gubun: sel.gubun, cat: sel.cat,
+    method: sel.method || '', date: $('date').value, memo: $('memo').value
+  }}).then(function(){
+    $('amt').value = ''; $('memo').value = '';
+    toast('저장되었습니다');
+  }).catch(function(e){ if (String(e.message) !== 'AUTH') toast(e.message || '저장 실패'); });
+}
+
+/* ================= 일괄 ================= */
+function renderBatchChips(){
+  chips($('bmethods'), BOOT.cards, sel.bmethod, function(v){
+    sel.bmethod = v; renderBatchChips();
+  });
+}
+function renderBatch(){
+  var items = BOOT.sections.filter(function(s){ return s.key === '변동지출'; })[0].items;
+  var t = $('btable');
+  t.innerHTML = '';
+  items.forEach(function(it){
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + it + '</td><td style="width:44%"><input inputmode="numeric" ' +
+      'style="font-size:15px" data-cat="' + it + '" placeholder="0"></td>';
+    t.appendChild(tr);
+  });
+}
+function saveBatch(){
+  var rows = [];
+  document.querySelectorAll('#btable input').forEach(function(i){
+    if (i.value) rows.push({ cat: i.dataset.cat, amount: i.value });
+  });
+  if (!rows.length) { toast('입력된 금액이 없습니다'); return; }
+
+  api('batch', { payload: { month: $('bmonth').value, method: sel.bmethod, rows: rows } })
+    .then(function(r){
+      document.querySelectorAll('#btable input').forEach(function(i){ i.value = ''; });
+      toast(r.count + '건 저장되었습니다');
+    }).catch(function(e){ if (String(e.message) !== 'AUTH') toast(e.message || '저장 실패'); });
+}
+
+/* ================= 요약 ================= */
+function loadSummary(){
+  if (!curMonth) curMonth = BOOT.month;
+  var lbl = curMonth.split('-')[0] + '년 ' + Number(curMonth.split('-')[1]) + '월';
+  $('s-month').textContent = lbl + (curMonth === BOOT.month ? ' (이번 달)' : '');
+
+  api('summary', { month: curMonth }).then(function(s){
+    if (!s.income && !s.expense && !s.saving) toast(lbl + ' 기록이 없습니다');
+    $('s-in').textContent  = won(s.income);
+    $('s-out').textContent = won(s.expense);
+    $('s-sav').textContent = won(s.saving);
+    var bal = $('s-bal');
+    bal.textContent = won(s.balance);
+    bal.className = 'v ' + (s.balance < 0 ? 'neg' : 'pos');
+    $('s-rate').textContent = (s.rate * 100).toFixed(1) + '%';
+
+    var h = '';
+    s.cats.forEach(function(c){
+      var pct = c.budget ? Math.min(c.actual / c.budget, 1.5) : 0;
+      var cls = !c.budget ? '' : (c.actual > c.budget ? 'b' : (pct >= .8 ? 'w' : ''));
+      h += '<div style="margin-bottom:11px">' +
+           '<div class="line" style="border:0;padding:0"><span>' + c.name + '</span>' +
+           '<span class="r">' + won(c.actual) + (c.budget ? ' / ' + won(c.budget) : '') + '</span></div>' +
+           '<div class="bar"><i class="' + cls + '" style="width:' +
+           Math.round(Math.min(pct,1)*100) + '%"></i></div></div>';
+    });
+    $('s-cats').innerHTML = h || '<div class="muted">데이터 없음</div>';
+
+    if (BOOT.cardAccount) {
+      $('s-cardhead').textContent = '카드 대금 (' + BOOT.cardAccount + ' 계좌 출금)';
+    }
+    $('s-cards').innerHTML = s.cards.map(function(c){
+      return '<div class="line"><span>' + c.name + '</span><b>' + won(c.amount) + '</b></div>';
+    }).join('');
+  }).catch(fail);
+}
+
+/* ================= 월별 ================= */
+function loadYearly(){
+  if (!curYear) curYear = Number(BOOT.month.split('-')[0]);
+  api('yearly', { year: curYear }).then(function(d){
+    $('y-year').textContent = d.year + '년';
+    $('y-in').textContent  = won(d.total.income);
+    $('y-out').textContent = won(d.total.expense);
+    $('y-sav').textContent = won(d.total.saving);
+    var yb = $('y-bal');
+    yb.textContent = won(d.total.balance);
+    yb.className = 'v ' + (d.total.balance < 0 ? 'neg' : 'pos');
+
+    $('y-avg').textContent = d.activeMonths
+      ? '기록이 있는 ' + d.activeMonths + '개월 기준 월평균 — 수입 ' + won(d.avg.income) +
+        ' · 지출 ' + won(d.avg.expense) + ' · 저축 ' + won(d.avg.saving)
+      : '이 해에는 기록이 없습니다.';
+
+    var rows = d.rows.filter(function(r){ return r.has; });
+    var max = 1;
+    rows.forEach(function(r){ max = Math.max(max, r.income, r.expense); });
+
+    var h = '<tr><th>월</th><th>수입</th><th>지출</th><th>저축</th><th>잔액</th><th>저축률</th></tr>';
+    rows.forEach(function(r){
+      var w = function(v){ return (v / max * 100).toFixed(1); };
+      h += '<tr class="yrow" onclick="jumpMonth(\'' + r.key + '\')">' +
+        '<td><b>' + r.month + '월</b></td>' +
+        '<td class="a">' + won(r.income) + '</td>' +
+        '<td class="a">' + won(r.expense) +
+          '<div class="sbar">' +
+          '<i style="width:' + w(r.fixed) + '%;background:#5b8def"></i>' +
+          '<i style="width:' + w(r.vari)  + '%;background:#e8a33d"></i>' +
+          '<i style="width:' + w(r.once)  + '%;background:#a06be0"></i>' +
+          '</div></td>' +
+        '<td class="a">' + won(r.saving) + '</td>' +
+        '<td class="a ' + (r.balance < 0 ? 'neg' : 'pos') + '">' + won(r.balance) + '</td>' +
+        '<td class="a">' + (r.rate * 100).toFixed(0) + '%</td></tr>';
+    });
+    $('y-table').innerHTML = rows.length ? h : '<tr><td class="muted">기록이 없습니다</td></tr>';
+  }).catch(fail);
+}
+
+/* ================= 이사 ================= */
+function loadMoving(){
+  api('moving').then(function(m){
+    var left = m.furnitureBudget - m.furniture;
+    $('m-used').textContent = won(m.furniture);
+    var l = $('m-left');
+    l.textContent = won(left);
+    l.className = 'v ' + (left < 0 ? 'neg' : 'pos');
+
+    var pct = Math.min(m.furniture / m.furnitureBudget, 1);
+    var bar = $('m-bar');
+    bar.style.width = Math.round(pct*100) + '%';
+    bar.className = m.furniture > m.furnitureBudget ? 'b' : (pct >= .8 ? 'w' : '');
+
+    $('m-months').innerHTML = m.byMonth.map(function(x){
+      return '<div class="line"><span>' + x.month + '</span><b>' + won(x.amount) + '</b></div>';
+    }).join('');
+    $('m-once').textContent = won(m.once);
+    renderWish(m.wish);
+  }).catch(fail);
+}
+
+function renderWish(list){
+  var h = '';
+  list.forEach(function(w){
+    var done = w.status === '완료';
+    h += '<div class="line"><span style="' + (done ? 'text-decoration:line-through;color:#9aa0a6' : '') + '">' +
+         w.name + '</span>' +
+         (done ? '<span class="r">완료</span>'
+               : '<button class="mini ghost" onclick="buyWish(' + w.row + ',\'' +
+                 String(w.name).replace(/'/g,"\\'") + '\')">구매</button>') +
+         '</div>';
+  });
+  $('m-wish').innerHTML = h || '<div class="muted">남은 항목이 없습니다</div>';
+}
+
+function addWish(){
+  var n = $('w-name').value.trim();
+  if (!n) return;
+  api('wishAdd', { name: n }).then(function(list){
+    $('w-name').value = '';
+    renderWish(list);
+    toast('추가되었습니다');
+  }).catch(fail);
+}
+
+function buyWish(row, name){
+  var a = prompt(name + ' — 실제 결제 금액(원)');
+  if (!a) return;
+  var m = prompt('결제수단', (BOOT.methods && BOOT.methods[0]) || '') || '';
+  api('wishBuy', {
+    row: row, amount: Number(String(a).replace(/[^0-9]/g,'')),
+    method: m, date: $('date').value
+  }).then(function(){ toast('구매로 기록했습니다'); loadMoving(); }).catch(fail);
+}
+
+/* ================= 내역 ================= */
+function loadLog(){
+  api('recent', { n: 25 }).then(function(rows){
+    $('log').innerHTML = rows.map(function(r){
+      return '<div class="line"><span>' + r.date + ' · ' + r.cat +
+             (r.memo ? ' <span class="r">' + String(r.memo).slice(0,18) + '</span>' : '') + '</span>' +
+             '<span><b>' + won(r.amount) + '</b> ' +
+             '<button class="mini ghost" onclick="del(\'' + r.id + '\')">삭제</button></span></div>';
+    }).join('') || '<div class="muted">기록이 없습니다</div>';
+  }).catch(fail);
+}
+
+function del(id){
+  if (!confirm('이 기록을 삭제할까요?')) return;
+  api('delete', { id: id }).then(function(){ toast('삭제했습니다'); loadLog(); }).catch(fail);
+}
+
+/* ================= PWA ================= */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(function(){ /* 정적 호스팅에서만 동작 */ });
+}
+</script>
+
+</body>
+</html>
