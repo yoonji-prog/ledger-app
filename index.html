@@ -126,6 +126,17 @@
   .kpi .l .hint{display:block}
   .abar{height:6px;border-radius:99px;background:#eef1f6;overflow:hidden;margin-top:4px}
   .abar i{display:block;height:100%;background:var(--accent)}
+  .ent{display:flex;justify-content:space-between;gap:10px;padding:9px 0;
+    border-bottom:1px solid #f0f2f4}
+  .ent:last-child{border-bottom:0}
+  .ent .nm{font-size:13px;font-weight:600}
+  .ent .dt{font-size:11px;color:var(--sub);margin-top:2px;line-height:1.4}
+  .ent .amt{font-size:13px;font-weight:700;white-space:nowrap;text-align:right}
+  .ent .mth{font-size:10px;color:var(--sub);font-weight:400;display:block;margin-top:2px}
+  .mhead{display:flex;justify-content:space-between;align-items:baseline;
+    background:#f3f6fb;border-radius:8px;padding:7px 10px;margin:12px 0 4px;font-size:12px}
+  .mhead:first-child{margin-top:0}
+  .mhead b{font-weight:700}
 
   /* ===== PC / 태블릿 가로 (900px 이상) ===== */
   @media (min-width:900px){
@@ -363,6 +374,12 @@
       <div class="line"><span>내 돈으로 쓴 금액</span><b id="m-own">–</b></div>
       <div class="line" id="m-comp-row"><span>회사 복지카드
         <span class="hint">내 돈 아님</span></span><b id="m-comp">–</b></div>
+    </div>
+
+    <div class="card">
+      <h2>이사에 쓴 내역</h2>
+      <div class="chips" id="m-filter" style="margin-bottom:10px"></div>
+      <div id="m-entries"></div>
     </div>
 
     <div class="card">
@@ -829,8 +846,58 @@ function loadMoving(){
     $('m-own').textContent  = won(m.ownPaid);
     $('m-comp-row').style.display = m.companyPaid ? '' : 'none';
     $('m-comp').textContent = won(m.companyPaid);
+    MOVE_ENTRIES = m.entries || [];
+    renderEntryFilter();
+    renderEntries();
     renderWish(m.wish);
   }).catch(fail);
+}
+
+var MOVE_ENTRIES = [], entFilter = '전체';
+
+function renderEntryFilter(){
+  var cats = ['전체'];
+  MOVE_ENTRIES.forEach(function(e){
+    if (cats.indexOf(e.cat) < 0) cats.push(e.cat);
+  });
+  if (cats.indexOf(entFilter) < 0) entFilter = '전체';
+  chips($('m-filter'), cats, entFilter, function(v){
+    entFilter = v; renderEntryFilter(); renderEntries();
+  });
+}
+
+function renderEntries(){
+  var list = MOVE_ENTRIES.filter(function(e){
+    return entFilter === '전체' || e.cat === entFilter;
+  });
+  if (!list.length) { $('m-entries').innerHTML = '<div class="muted">내역이 없습니다.</div>'; return; }
+
+  // 월별로 묶고 소계를 붙입니다
+  var groups = [], idx = {};
+  list.forEach(function(e){
+    if (idx[e.ym] == null) { idx[e.ym] = groups.length; groups.push({ ym: e.ym, items: [], sum: 0 }); }
+    var g = groups[idx[e.ym]];
+    g.items.push(e); g.sum += e.amount;
+  });
+
+  $('m-entries').innerHTML = groups.map(function(g){
+    var label = g.ym ? g.ym.split('-')[0] + '년 ' + Number(g.ym.split('-')[1]) + '월' : '기타';
+    return '<div class="mhead"><span>' + label + ' · ' + g.items.length + '건</span>' +
+           '<b>' + won(g.sum) + '</b></div>' +
+      g.items.map(function(e){
+        return '<div class="ent"><div>' +
+          '<div class="nm">' + esc(e.name) + '</div>' +
+          (e.detail ? '<div class="dt">' + esc(e.detail) + '</div>' : '') +
+          '</div><div class="amt">' + won(e.amount) +
+          (e.method ? '<span class="mth">' + esc(e.method) + '</span>' : '') +
+          '</div></div>';
+      }).join('');
+  }).join('');
+}
+
+function esc(t){
+  return String(t == null ? '' : t)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function renderWish(list){
