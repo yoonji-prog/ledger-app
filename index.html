@@ -59,7 +59,7 @@
   nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);
     border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
   nav button{background:none;color:var(--sub);border-radius:0;padding:10px 0 14px;
-    font-size:11px;font-weight:600}
+    font-size:10.5px;font-weight:600;min-width:0}
   nav button.on{color:var(--accent)}
   nav button b{display:block;font-size:17px;font-weight:400;margin-bottom:1px}
   /* PC 레이아웃의 #v-sum{display:grid} 보다 우선해야 하므로 !important */
@@ -129,6 +129,27 @@
   .tag{background:#fff;border:1px solid var(--line);border-radius:99px;
     padding:5px 10px;font-size:12px}
   .hint{font-size:10px;color:#9aa0a6;font-weight:400}
+  .seg{display:flex;gap:0;background:#eef1f6;border-radius:11px;padding:3px;margin-bottom:12px}
+  .seg button{background:none;color:var(--sub);border-radius:9px;padding:9px;font-size:13px}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .net{font-size:30px;font-weight:800;letter-spacing:-.03em;margin-bottom:10px}
+  .netbar{display:flex;height:12px;border-radius:99px;overflow:hidden;background:#eef1f6}
+  .netbar i{display:block;height:100%}
+  .netbar .as{background:#2f6fed} .netbar .db{background:#d93a3a}
+  .arow{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:10px 0;border-bottom:1px solid #f0f2f4}
+  .arow:last-child{border-bottom:0}
+  .arow .kd{font-size:10px;padding:2px 6px;border-radius:4px;margin-right:6px;
+    background:#eef3fb;color:var(--accent)}
+  .arow .kd.debt{background:#fdeaea;color:var(--bad)}
+  .arow .nm{font-size:13px;font-weight:600}
+  .arow .mm{font-size:11px;color:var(--sub);margin-top:2px}
+  .arow .val{font-size:13px;font-weight:700;white-space:nowrap;
+    background:none;border:0;color:var(--accent);padding:4px;width:auto}
+  .hbar{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:6px}
+  .hbar div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px}
+  .hbar i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
+  .hbar span{font-size:9px;color:var(--sub)}
   .kpi .l .hint{display:block}
   .abar{height:6px;border-radius:99px;background:#eef1f6;overflow:hidden;margin-top:4px}
   .abar i{display:block;height:100%;background:var(--accent)}
@@ -163,9 +184,11 @@
     .card{padding:18px}
     .kpi{grid-template-columns:repeat(4,1fr)}
 
-    #v-sum,#v-move{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
-    #v-sum .card,#v-move .card{margin-bottom:0}
-    #v-sum>.card:first-child{grid-column:1 / -1}
+    #v-sum,#v-move,#v-asset{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+    #v-sum .card,#v-move .card,#v-asset .card{margin-bottom:0}
+    #v-sum>.card:first-child,#v-asset>.card:first-child{grid-column:1 / -1}
+    #v-add .seg{max-width:660px}
+    nav button{font-size:13px}
 
     #v-add .card,#v-batch .card{max-width:660px}
     input,select,textarea{font-size:14px;padding:10px}
@@ -219,7 +242,12 @@
 <main>
   <!-- ========== 기록 ========== -->
   <section id="v-add">
-    <div class="card">
+    <div class="seg">
+      <button class="on" id="seg-one" onclick="setAddMode('one')">건별 입력</button>
+      <button id="seg-bulk" onclick="setAddMode('bulk')">카드 합계 일괄</button>
+    </div>
+
+    <div class="card" id="add-one">
       <h2>금액</h2>
       <input id="amt" inputmode="numeric" placeholder="0" autocomplete="off">
       <div class="chips" id="quick"></div>
@@ -241,11 +269,8 @@
       <div style="height:12px"></div>
       <button onclick="save()">저장</button>
     </div>
-  </section>
 
-  <!-- ========== 일괄 ========== -->
-  <section id="v-batch" class="hide">
-    <div class="card">
+    <div class="card hide" id="add-bulk">
       <h2>카드앱 카테고리 합계 일괄 입력</h2>
       <label>카드</label>
       <div class="chips" id="bmethods"></div>
@@ -302,6 +327,25 @@
       <h2 id="s-cardhead">카드 대금</h2>
       <div id="s-cards"></div>
     </div>
+    <div class="card">
+      <h2 id="d-month">점검</h2>
+      <div id="d-items"></div>
+    </div>
+
+    <div class="card">
+      <h2>예산을 넘긴 항목</h2>
+      <div id="d-over"></div>
+    </div>
+
+    <div class="card">
+      <h2>다음 달 권장 예산 <span class="muted" id="d-basis"></span></h2>
+      <div id="d-suggest"></div>
+    </div>
+
+    <div class="card">
+      <h2>아직 안 산 것</h2>
+      <div id="d-wish"></div>
+    </div>
   </section>
 
   <!-- ========== 월별 ========== -->
@@ -336,30 +380,40 @@
     </div>
   </section>
 
-  <!-- ========== 진단 ========== -->
-  <section id="v-diag" class="hide">
+  <!-- ========== 자산 ========== -->
+  <section id="v-asset" class="hide">
     <div class="card">
-      <div class="mswitch">
-        <button class="mini ghost" onclick="shiftDiag(-1)">‹</button>
-        <b id="d-month">–</b>
-        <button class="mini ghost" onclick="shiftDiag(1)">›</button>
+      <h2>순자산</h2>
+      <div class="net" id="a-net">–</div>
+      <div class="netbar">
+        <i class="as" id="a-bar-asset"></i>
+        <i class="db" id="a-bar-debt"></i>
       </div>
-      <div id="d-items"></div>
+      <div class="legend">
+        <span><i style="background:#2f6fed"></i>자산 <b id="a-asset">–</b></span>
+        <span><i style="background:#d93a3a"></i>부채 <b id="a-debt">–</b></span>
+      </div>
+      <div class="line" style="margin-top:10px"><span>부채 비율
+        <span class="hint">부채 ÷ 자산</span></span><b id="a-ratio">–</b></div>
+      <div class="line"><span>대출 이자 <span class="hint">월 / 연</span></span>
+        <b id="a-int">–</b></div>
     </div>
 
     <div class="card">
-      <h2>예산을 넘긴 항목</h2>
-      <div id="d-over"></div>
+      <h2>가진 것 · 갚을 것</h2>
+      <div id="a-manual"></div>
+      <button class="ghost mini" style="margin-top:10px" onclick="addAsset()">＋ 항목 추가</button>
+      <p class="muted">금액을 누르면 잔액을 고칠 수 있습니다. 대출은 갚을 때마다 줄여 주세요.</p>
     </div>
 
     <div class="card">
-      <h2>다음 달 권장 예산 <span class="muted" id="d-basis"></span></h2>
-      <div id="d-suggest"></div>
+      <h2>모은 돈 <span class="muted">원장에서 자동 합산</span></h2>
+      <div id="a-savings"></div>
     </div>
 
     <div class="card">
-      <h2>아직 안 산 것</h2>
-      <div id="d-wish"></div>
+      <h2>순자산 추이</h2>
+      <div id="a-hist"></div>
     </div>
   </section>
 
@@ -410,10 +464,9 @@
 
 <nav>
   <button class="on" data-v="add"><b>＋</b>기록</button>
-  <button data-v="batch"><b>▤</b>일괄</button>
-  <button data-v="sum"><b>◐</b>요약</button>
-  <button data-v="year"><b>📈</b>월별</button>
-  <button data-v="diag"><b>🩺</b>진단</button>
+  <button data-v="sum"><b>◐</b>이달</button>
+  <button data-v="year"><b>📈</b>추이</button>
+  <button data-v="asset"><b>💰</b>자산</button>
   <button data-v="move"><b>🏠</b>이사</button>
   <button data-v="log"><b>≡</b>내역</button>
 </nav>
@@ -429,7 +482,7 @@ var API   = localStorage.getItem('gb_api')   || '';
 var TOKEN = localStorage.getItem('gb_token') || '';
 var BOOT = null, curMonth = null, curYear = null;
 var sel = { gubun: '변동지출', cat: null, method: null, bmethod: null };
-var TABS = ['add','batch','sum','year','diag','move','log'];
+var TABS = ['add','sum','year','asset','move','log'];
 
 function won(n){ return (Math.round(n)||0).toLocaleString('ko-KR') + '원'; }
 function $(id){ return document.getElementById(id); }
@@ -645,9 +698,9 @@ function showTab(v){
     x.classList.toggle('on', x.dataset.v === v);
   });
   TABS.forEach(function(k){ $('v-'+k).classList.toggle('hide', k !== v); });
-  if (v === 'sum')  loadSummary();
+  if (v === 'sum')  { loadSummary(); loadDiag(); }
   if (v === 'year') loadYearly();
-  if (v === 'diag') loadDiag();
+  if (v === 'asset') loadAssets();
   if (v === 'move') loadMoving();
   if (v === 'log')  loadLog();
   window.scrollTo(0, 0);
@@ -662,11 +715,11 @@ function shiftMonth(d){
   if (m < 1)  { y--; m = 12; }
   if (m > 12) { y++; m = 1; }
   curMonth = y + '-' + ('0' + m).slice(-2);
-  loadSummary();
+  loadSummary(); loadDiag();
 }
-function goThisMonth(){ curMonth = BOOT.month; loadSummary(); }
+function goThisMonth(){ curMonth = BOOT.month; loadSummary(); loadDiag(); }
 function shiftYear(d){ curYear += d; loadYearly(); }
-function jumpMonth(key){ curMonth = key; showTab('sum'); }
+function jumpMonth(key){ curMonth = key; diagMonth = key; showTab('sum'); }
 
 /* ================= 칩 ================= */
 function chips(el, items, current, onPick){
@@ -688,6 +741,14 @@ function renderAdd(){
   });
   chips($('cats'), sec.items, sel.cat, function(v){ sel.cat = v; renderAdd(); });
   chips($('methods'), BOOT.methods, sel.method, function(v){ sel.method = v; renderAdd(); });
+}
+
+function setAddMode(m){
+  var one = m === 'one';
+  $('add-one').classList.toggle('hide', !one);
+  $('add-bulk').classList.toggle('hide', one);
+  $('seg-one').classList.toggle('on', one);
+  $('seg-bulk').classList.toggle('on', !one);
 }
 
 /* ================= 기록 ================= */
@@ -870,18 +931,9 @@ function loadYearly(){
 var diagMonth = null;
 var yearExMoving = false;
 
-function shiftDiag(d){
-  var y = Number(diagMonth.split('-')[0]), m = Number(diagMonth.split('-')[1]) + d;
-  if (m < 1)  { y--; m = 12; }
-  if (m > 12) { y++; m = 1; }
-  diagMonth = y + '-' + ('0' + m).slice(-2);
-  loadDiag();
-}
-
 function loadDiag(){
-  if (!diagMonth) diagMonth = BOOT.month;
-  $('d-month').textContent = diagMonth.split('-')[0] + '년 ' +
-    Number(diagMonth.split('-')[1]) + '월 점검';
+  diagMonth = curMonth || BOOT.month;
+  $('d-month').textContent = Number(diagMonth.split('-')[1]) + '월 점검';
 
   api('advice', { month: diagMonth }, true).then(function(d){
     // 핵심 항목
@@ -922,6 +974,94 @@ function loadDiag(){
   }).catch(fail);
 }
 
+/* ================= 자산 ================= */
+var ASSETS = [];
+
+function loadAssets(){
+  api('assets', {}, true).then(function(a){
+    ASSETS = a.manual || [];
+    var net = $('a-net');
+    net.textContent = (a.net >= 0 ? '' : '-') + won(Math.abs(a.net));
+    net.className = 'net ' + (a.net < 0 ? 'neg' : '');
+
+    var tot = Math.max(1, a.asset + a.debt);
+    $('a-bar-asset').style.width = (a.asset / tot * 100) + '%';
+    $('a-bar-debt').style.width  = (a.debt  / tot * 100) + '%';
+    $('a-asset').textContent = won(a.asset);
+    $('a-debt').textContent  = won(a.debt);
+    $('a-ratio').textContent = (a.debtRatio * 100).toFixed(1) + '%';
+    $('a-int').textContent = a.interest
+      ? won(a.interest) + ' / ' + won(a.interestYear) : '–';
+
+    // 가진 것 · 갚을 것
+    $('a-manual').innerHTML = a.manual.length
+      ? a.manual.map(function(m, i){
+          var debt = m.kind === '부채';
+          return '<div class="arow"><div>' +
+            '<span class="kd' + (debt ? ' debt' : '') + '">' + m.kind + '</span>' +
+            '<span class="nm">' + esc(m.name) + '</span>' +
+            (m.memo ? '<div class="mm">' + esc(m.memo) + '</div>' : '') +
+            '</div><div style="text-align:right">' +
+            '<button class="val" onclick="editAsset(' + i + ')">' +
+              won(m.amount) + '</button>' +
+            '<button class="mini ghost" style="padding:3px 7px;font-size:11px;margin-left:4px" ' +
+              'onclick="delAsset(' + i + ')">×</button>' +
+            '</div></div>';
+        }).join('')
+      : '<div class="muted">항목이 없습니다.</div>';
+
+    // 모은 돈
+    $('a-savings').innerHTML = a.savings.length
+      ? a.savings.map(function(x){
+          return '<div class="line"><span>' + esc(x.name) + '</span><b>' + won(x.amount) + '</b></div>';
+        }).join('') +
+        '<div class="line"><span><b>합계</b></span><b>' + won(a.savingTotal) + '</b></div>'
+      : '<div class="muted">저축 기록이 없습니다.</div>';
+
+    // 추이
+    if (a.history.length < 2) {
+      $('a-hist').innerHTML = '<div class="muted">매월 1일에 자동으로 기록됩니다. ' +
+        '지금까지 ' + a.history.length + '개월 기록이 있어 아직 추이를 그리지 못합니다.</div>';
+    } else {
+      var mx = 1;
+      a.history.forEach(function(h){ mx = Math.max(mx, Math.abs(h.net)); });
+      $('a-hist').innerHTML = '<div class="hbar">' + a.history.slice(-12).map(function(h){
+        return '<div><i style="height:' + Math.round(Math.abs(h.net)/mx*100) + '%"></i>' +
+               '<span>' + h.date.slice(5, 7) + '월</span></div>';
+      }).join('') + '</div>' +
+      '<div class="line" style="margin-top:8px"><span>최근 기록</span><b>' +
+      won(a.history[a.history.length-1].net) + '</b></div>';
+    }
+  }).catch(fail);
+}
+
+function editAsset(i){
+  var m = ASSETS[i];
+  if (!m) return;
+  var v = prompt(m.name + ' — 현재 잔액(원)', String(m.amount));
+  if (v == null) return;
+  api('assetSet', { row: m.row, amount: Number(String(v).replace(/[^0-9.-]/g,'')) })
+    .then(function(){ clearCache(); toast('수정했습니다'); loadAssets(); }).catch(fail);
+}
+
+function addAsset(){
+  var n = prompt('항목 이름 (예: 청약통장, 자동차 할부)');
+  if (!n) return;
+  var k = confirm('부채인가요?\n\n확인 = 부채 (갚아야 할 돈)\n취소 = 자산 (내 돈)') ? '부채' : '자산';
+  var v = prompt('금액(원)');
+  if (!v) return;
+  api('assetAdd', { name: n, kind: k, amount: Number(String(v).replace(/[^0-9.-]/g,'')), memo: '' })
+    .then(function(){ clearCache(); toast('추가했습니다'); loadAssets(); }).catch(fail);
+}
+
+function delAsset(i){
+  var m = ASSETS[i];
+  if (!m) return;
+  if (!confirm(m.name + ' 항목을 삭제할까요?')) return;
+  api('assetDel', { row: m.row })
+    .then(function(){ clearCache(); toast('삭제했습니다'); loadAssets(); }).catch(fail);
+}
+
 /* ================= 이사 ================= */
 function loadMoving(){
   api('moving', {}, true).then(function(m){
@@ -950,7 +1090,7 @@ function loadMoving(){
   }).catch(fail);
 }
 
-var MOVE_ENTRIES = [], entFilter = '전체';
+var MOVE_ENTRIES = [], entFilter = '전체', WISH = [];
 
 function renderEntryFilter(){
   var cats = ['전체'];
@@ -998,14 +1138,14 @@ function esc(t){
 }
 
 function renderWish(list){
+  WISH = list || [];
   var h = '';
-  list.forEach(function(w){
+  list.forEach(function(w, i){
     var done = w.status === '완료';
     h += '<div class="line"><span style="' + (done ? 'text-decoration:line-through;color:#9aa0a6' : '') + '">' +
-         w.name + '</span>' +
+         esc(w.name) + '</span>' +
          (done ? '<span class="r">완료</span>'
-               : '<button class="mini ghost" onclick="buyWish(' + w.row + ',\'' +
-                 String(w.name).replace(/'/g,"\\'") + '\')">구매</button>') +
+               : '<button class="mini ghost" onclick="buyWish(' + i + ')">구매</button>') +
          '</div>';
   });
   $('m-wish').innerHTML = h || '<div class="muted">남은 항목이 없습니다</div>';
@@ -1021,12 +1161,14 @@ function addWish(){
   }).catch(fail);
 }
 
-function buyWish(row, name){
-  var a = prompt(name + ' — 실제 결제 금액(원)');
+function buyWish(i){
+  var w = WISH[i];
+  if (!w) return;
+  var a = prompt(w.name + ' — 실제 결제 금액(원)');
   if (!a) return;
   var m = prompt('결제수단', (BOOT.methods && BOOT.methods[0]) || '') || '';
   api('wishBuy', {
-    row: row, amount: Number(String(a).replace(/[^0-9]/g,'')),
+    row: w.row, amount: Number(String(a).replace(/[^0-9]/g,'')),
     method: m, date: $('date').value
   }).then(function(){ clearCache(); toast('구매로 기록했습니다'); loadMoving(); }).catch(fail);
 }
