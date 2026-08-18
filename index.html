@@ -122,6 +122,10 @@
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
   .tag{background:#fff;border:1px solid var(--line);border-radius:99px;
     padding:5px 10px;font-size:12px}
+  .hint{font-size:10px;color:#9aa0a6;font-weight:400}
+  .kpi .l .hint{display:block}
+  .abar{height:6px;border-radius:99px;background:#eef1f6;overflow:hidden;margin-top:4px}
+  .abar i{display:block;height:100%;background:var(--accent)}
 
   /* ===== PC / 태블릿 가로 (900px 이상) ===== */
   @media (min-width:900px){
@@ -248,13 +252,27 @@
       </div>
       <div class="kpi">
         <div><div class="l">수입</div><div class="v" id="s-in">–</div></div>
-        <div><div class="l">지출</div><div class="v" id="s-out">–</div></div>
+        <div><div class="l">생활 지출 <span class="hint">고정+변동</span></div>
+             <div class="v" id="s-living">–</div></div>
+        <div><div class="l">이사·정착 <span class="hint">일회성</span></div>
+             <div class="v" id="s-moving">–</div></div>
         <div><div class="l">저축·투자</div><div class="v" id="s-sav">–</div></div>
-        <div><div class="l">잔액</div><div class="v" id="s-bal">–</div></div>
       </div>
       <div style="margin-top:12px">
+        <div class="line"><span><b>이사 제외 수지</b><br>
+          <span class="hint">평상시 살림이 수입 안에서 도는지</span></span>
+          <b id="s-lbal">–</b></div>
+        <div class="line"><span>전체 수지 <span class="hint">이사비 포함</span></span>
+          <b id="s-bal">–</b></div>
         <div class="line"><span>저축률</span><b id="s-rate">–</b></div>
+        <div class="line" id="s-comp-row"><span>회사 복지카드 결제
+          <span class="hint">내 돈 아님</span></span><b id="s-comp">–</b></div>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>어디서 빠져나갔나 · 계좌 / 결제수단</h2>
+      <div id="s-acct"></div>
     </div>
 
     <div class="card">
@@ -275,6 +293,10 @@
         <button class="mini ghost" onclick="shiftYear(-1)">‹</button>
         <b id="y-year">–</b>
         <button class="mini ghost" onclick="shiftYear(1)">›</button>
+      </div>
+      <div class="chips" style="margin-bottom:12px">
+        <button type="button" class="chip on" id="y-t-all" onclick="setYearMode(false)">전체</button>
+        <button type="button" class="chip" id="y-t-ex" onclick="setYearMode(true)">이사 제외</button>
       </div>
       <div class="kpi">
         <div><div class="l">연 수입</div><div class="v" id="y-in">–</div></div>
@@ -337,7 +359,10 @@
 
     <div class="card">
       <h2>이사 일회성 지출 누계</h2>
-      <div class="line"><span>일회성 지출 합계</span><b id="m-once">–</b></div>
+      <div class="line"><span>전체 합계</span><b id="m-once">–</b></div>
+      <div class="line"><span>내 돈으로 쓴 금액</span><b id="m-own">–</b></div>
+      <div class="line" id="m-comp-row"><span>회사 복지카드
+        <span class="hint">내 돈 아님</span></span><b id="m-comp">–</b></div>
     </div>
 
     <div class="card">
@@ -607,13 +632,36 @@ function loadSummary(){
 
   api('summary', { month: curMonth }).then(function(s){
     if (!s.income && !s.expense && !s.saving) toast(lbl + ' 기록이 없습니다');
-    $('s-in').textContent  = won(s.income);
-    $('s-out').textContent = won(s.expense);
-    $('s-sav').textContent = won(s.saving);
+    $('s-in').textContent     = won(s.income);
+    $('s-living').textContent = won(s.living);
+    $('s-moving').textContent = won(s.moving);
+    $('s-sav').textContent    = won(s.saving);
+
+    var lb = $('s-lbal');
+    lb.textContent = (s.livingBalance >= 0 ? '+' : '') + won(s.livingBalance);
+    lb.className = s.livingBalance < 0 ? 'neg' : 'pos';
+
     var bal = $('s-bal');
-    bal.textContent = won(s.balance);
-    bal.className = 'v ' + (s.balance < 0 ? 'neg' : 'pos');
+    bal.textContent = (s.balance >= 0 ? '+' : '') + won(s.balance);
+    bal.className = s.balance < 0 ? 'neg' : 'pos';
+
     $('s-rate').textContent = (s.rate * 100).toFixed(1) + '%';
+
+    $('s-comp-row').style.display = s.company ? '' : 'none';
+    $('s-comp').textContent = won(s.company);
+
+    // 계좌 / 결제수단별
+    var amax = 1;
+    (s.accounts || []).forEach(function(a){ amax = Math.max(amax, a.amount); });
+    $('s-acct').innerHTML = (s.accounts || []).length
+      ? s.accounts.map(function(a){
+          return '<div style="margin-bottom:10px">' +
+            '<div class="line" style="border:0;padding:0">' +
+            '<span>' + a.name + '</span><span class="r">' + won(a.amount) + '</span></div>' +
+            '<div class="abar"><i style="width:' +
+            Math.round(a.amount / amax * 100) + '%"></i></div></div>';
+        }).join('')
+      : '<div class="muted">지출 기록이 없습니다</div>';
 
     var h = '';
     s.cats.forEach(function(c){
@@ -637,23 +685,50 @@ function loadSummary(){
 }
 
 /* ================= 월별 ================= */
+function setYearMode(ex){
+  yearExMoving = ex;
+  $('y-t-all').classList.toggle('on', !ex);
+  $('y-t-ex').classList.toggle('on', ex);
+  loadYearly();
+}
+
 function loadYearly(){
   if (!curYear) curYear = Number(BOOT.month.split('-')[0]);
   api('yearly', { year: curYear }).then(function(d){
     $('y-year').textContent = d.year + '년';
-    $('y-in').textContent  = won(d.total.income);
-    $('y-out').textContent = won(d.total.expense);
-    $('y-sav').textContent = won(d.total.saving);
+
+    // '이사 제외' 모드에서는 일회성지출을 빼고 다시 계산합니다
+    var rows = d.rows.filter(function(r){ return r.has; }).map(function(r){
+      var ex = yearExMoving;
+      var expense = ex ? (r.fixed + r.vari) : r.expense;
+      return {
+        month: r.month, key: r.key, income: r.income,
+        fixed: r.fixed, vari: r.vari, once: ex ? 0 : r.once,
+        saving: r.saving, expense: expense,
+        balance: r.income - expense - r.saving,
+        rate: r.rate
+      };
+    });
+
+    var tot = { income:0, expense:0, saving:0, balance:0 };
+    rows.forEach(function(r){
+      tot.income += r.income; tot.expense += r.expense;
+      tot.saving += r.saving; tot.balance += r.balance;
+    });
+    var n = rows.length || 1;
+
+    $('y-in').textContent  = won(tot.income);
+    $('y-out').textContent = won(tot.expense);
+    $('y-sav').textContent = won(tot.saving);
     var yb = $('y-bal');
-    yb.textContent = won(d.total.balance);
-    yb.className = 'v ' + (d.total.balance < 0 ? 'neg' : 'pos');
+    yb.textContent = won(tot.balance);
+    yb.className = 'v ' + (tot.balance < 0 ? 'neg' : 'pos');
 
-    $('y-avg').textContent = d.activeMonths
-      ? '기록이 있는 ' + d.activeMonths + '개월 기준 월평균 — 수입 ' + won(d.avg.income) +
-        ' · 지출 ' + won(d.avg.expense) + ' · 저축 ' + won(d.avg.saving)
+    $('y-avg').textContent = rows.length
+      ? '기록이 있는 ' + rows.length + '개월 기준 월평균 — 수입 ' + won(tot.income/n) +
+        ' · 지출 ' + won(tot.expense/n) + ' · 저축 ' + won(tot.saving/n) +
+        (yearExMoving ? '  (이사·정착 지출 제외)' : '')
       : '이 해에는 기록이 없습니다.';
-
-    var rows = d.rows.filter(function(r){ return r.has; });
     var max = 1;
     rows.forEach(function(r){ max = Math.max(max, r.income, r.expense); });
 
@@ -679,6 +754,7 @@ function loadYearly(){
 
 /* ================= 진단 ================= */
 var diagMonth = null;
+var yearExMoving = false;
 
 function shiftDiag(d){
   var y = Number(diagMonth.split('-')[0]), m = Number(diagMonth.split('-')[1]) + d;
@@ -750,6 +826,9 @@ function loadMoving(){
       return '<div class="line"><span>' + x.month + '</span><b>' + won(x.amount) + '</b></div>';
     }).join('');
     $('m-once').textContent = won(m.once);
+    $('m-own').textContent  = won(m.ownPaid);
+    $('m-comp-row').style.display = m.companyPaid ? '' : 'none';
+    $('m-comp').textContent = won(m.companyPaid);
     renderWish(m.wish);
   }).catch(fail);
 }
