@@ -106,6 +106,23 @@
   .legend span{display:flex;align-items:center;gap:4px}
   .legend i{width:9px;height:9px;border-radius:2px;display:block}
 
+  /* 진단 */
+  .diag{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:9px;
+    background:#fafbfc}
+  .diag.bad{background:#fff6f6;border-color:#f3d4d4}
+  .diag.good{background:#f5fbf7;border-color:#cfe8d8}
+  .diag .t{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .diag .t b{font-size:13px}
+  .diag .t span{font-size:14px;font-weight:700;white-space:nowrap}
+  .diag p{margin:5px 0 0;font-size:12px;color:var(--sub);line-height:1.5}
+  .diag.bad .t span{color:var(--bad)}
+  .diag.good .t span{color:var(--good)}
+  .need{background:#eef3fb;border:1px solid #d6e2f7;border-radius:12px;padding:13px;margin-bottom:9px}
+  .need .big{font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--accent)}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .tag{background:#fff;border:1px solid var(--line);border-radius:99px;
+    padding:5px 10px;font-size:12px}
+
   /* ===== PC / 태블릿 가로 (900px 이상) ===== */
   @media (min-width:900px){
     body{padding-bottom:0;padding-left:210px;font-size:14px}
@@ -279,6 +296,33 @@
     </div>
   </section>
 
+  <!-- ========== 진단 ========== -->
+  <section id="v-diag" class="hide">
+    <div class="card">
+      <div class="mswitch">
+        <button class="mini ghost" onclick="shiftDiag(-1)">‹</button>
+        <b id="d-month">–</b>
+        <button class="mini ghost" onclick="shiftDiag(1)">›</button>
+      </div>
+      <div id="d-items"></div>
+    </div>
+
+    <div class="card">
+      <h2>예산을 넘긴 항목</h2>
+      <div id="d-over"></div>
+    </div>
+
+    <div class="card">
+      <h2>다음 달 권장 예산 <span class="muted" id="d-basis"></span></h2>
+      <div id="d-suggest"></div>
+    </div>
+
+    <div class="card">
+      <h2>아직 안 산 것</h2>
+      <div id="d-wish"></div>
+    </div>
+  </section>
+
   <!-- ========== 이사 ========== -->
   <section id="v-move" class="hide">
     <div class="card">
@@ -320,6 +364,7 @@
   <button data-v="batch"><b>▤</b>일괄</button>
   <button data-v="sum"><b>◐</b>요약</button>
   <button data-v="year"><b>📈</b>월별</button>
+  <button data-v="diag"><b>🩺</b>진단</button>
   <button data-v="move"><b>🏠</b>이사</button>
   <button data-v="log"><b>≡</b>내역</button>
 </nav>
@@ -334,7 +379,7 @@ var API   = localStorage.getItem('gb_api')   || '';
 var TOKEN = localStorage.getItem('gb_token') || '';
 var BOOT = null, curMonth = null, curYear = null;
 var sel = { gubun: '변동지출', cat: null, method: null, bmethod: null };
-var TABS = ['add','batch','sum','year','move','log'];
+var TABS = ['add','batch','sum','year','diag','move','log'];
 
 function won(n){ return (Math.round(n)||0).toLocaleString('ko-KR') + '원'; }
 function $(id){ return document.getElementById(id); }
@@ -465,6 +510,7 @@ function showTab(v){
   TABS.forEach(function(k){ $('v-'+k).classList.toggle('hide', k !== v); });
   if (v === 'sum')  loadSummary();
   if (v === 'year') loadYearly();
+  if (v === 'diag') loadDiag();
   if (v === 'move') loadMoving();
   if (v === 'log')  loadLog();
   window.scrollTo(0, 0);
@@ -628,6 +674,61 @@ function loadYearly(){
         '<td class="a">' + (r.rate * 100).toFixed(0) + '%</td></tr>';
     });
     $('y-table').innerHTML = rows.length ? h : '<tr><td class="muted">기록이 없습니다</td></tr>';
+  }).catch(fail);
+}
+
+/* ================= 진단 ================= */
+var diagMonth = null;
+
+function shiftDiag(d){
+  var y = Number(diagMonth.split('-')[0]), m = Number(diagMonth.split('-')[1]) + d;
+  if (m < 1)  { y--; m = 12; }
+  if (m > 12) { y++; m = 1; }
+  diagMonth = y + '-' + ('0' + m).slice(-2);
+  loadDiag();
+}
+
+function loadDiag(){
+  if (!diagMonth) diagMonth = BOOT.month;
+  $('d-month').textContent = diagMonth.split('-')[0] + '년 ' +
+    Number(diagMonth.split('-')[1]) + '월 점검';
+
+  api('advice', { month: diagMonth }).then(function(d){
+    // 핵심 항목
+    $('d-items').innerHTML = d.items.map(function(it){
+      return '<div class="diag ' + (it.ok ? 'good' : 'bad') + '">' +
+             '<div class="t"><b>' + it.title + '</b><span>' + it.value + '</span></div>' +
+             '<p>' + it.msg + '</p></div>';
+    }).join('');
+
+    // 예산 초과
+    $('d-over').innerHTML = d.over.length
+      ? d.over.map(function(o){
+          return '<div class="line"><span>' + o.name + '</span>' +
+                 '<span class="r neg">+' + won(o.diff) + '</span></div>';
+        }).join('') +
+        '<p class="muted">초과 합계 ' +
+        won(d.over.reduce(function(a,o){ return a + o.diff; }, 0)) + '</p>'
+      : '<div class="muted">예산을 넘긴 항목이 없습니다.</div>';
+
+    // 권장 예산
+    $('d-basis').textContent = d.suggestMonths
+      ? '(최근 ' + d.suggestMonths + '개월 평균)' : '';
+    $('d-suggest').innerHTML = d.suggest.length
+      ? d.suggest.map(function(x){
+          return '<div class="line"><span>' + x.name + '</span><b>' + won(x.avg) + '</b></div>';
+        }).join('') +
+        '<p class="muted">합계 ' +
+        won(d.suggest.reduce(function(a,x){ return a + x.avg; }, 0)) +
+        ' — 월간 시트의 예산 열에 넣어 두면 다음 달부터 알림이 동작합니다.</p>'
+      : '<div class="muted">아직 평균을 낼 기록이 부족합니다.</div>';
+
+    // 위시리스트
+    $('d-wish').innerHTML = d.wish.length
+      ? '<div class="tags">' + d.wish.map(function(w){
+          return '<span class="tag">' + w.name + '</span>';
+        }).join('') + '</div>'
+      : '<div class="muted">남은 항목이 없습니다.</div>';
   }).catch(fail);
 }
 
