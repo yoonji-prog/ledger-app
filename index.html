@@ -64,6 +64,12 @@
   nav button b{display:block;font-size:17px;font-weight:400;margin-bottom:1px}
   /* PC 레이아웃의 #v-sum{display:grid} 보다 우선해야 하므로 !important */
   .hide{display:none !important}
+  .bar-top{position:fixed;top:0;left:0;right:0;height:3px;z-index:70;
+    opacity:0;transition:opacity .15s;pointer-events:none}
+  .bar-top.on{opacity:1}
+  .bar-top i{display:block;height:100%;width:40%;background:var(--accent);
+    animation:slide 1.1s ease-in-out infinite}
+  @keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:#1a1d21;
     color:#fff;padding:11px 18px;border-radius:99px;font-size:13px;z-index:50;opacity:0;
     transition:opacity .2s;pointer-events:none}
@@ -192,7 +198,7 @@
     <input id="g-pin" type="password" inputmode="numeric" placeholder="••••••" autocomplete="current-password">
 
     <div style="height:14px"></div>
-    <button onclick="doLogin()">열기</button>
+    <button id="g-btn" onclick="doLogin()">열기</button>
     <p class="muted" id="g-msg"></p>
     <button class="gtoggle" onclick="toggleApiField()" id="g-toggle">서버 주소 변경</button>
     <p class="muted">주소와 PIN은 시트 메뉴 <b>[가계부]</b> 에서 확인·설정할 수 있습니다.
@@ -206,6 +212,7 @@
 <header>
   <h1>🧾 가계부</h1>
   <span class="mon" id="mon">…</span>
+  <button class="mini ghost" onclick="refreshAll()" title="새로고침">↻</button>
   <button class="mini ghost" onclick="logout()">잠금</button>
 </header>
 
@@ -413,6 +420,7 @@
 
 </div><!-- /#app -->
 
+<div class="bar-top" id="busy"><i></i></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -431,23 +439,63 @@ function toast(m){ var t=$('toast'); t.textContent=m; t.classList.add('on');
 /* ================= API ================= */
 /* Content-Type을 text/plain 으로 보내 CORS 프리플라이트를 피합니다.
    (Apps Script 웹앱은 프리플라이트에 응답하지 않습니다) */
-function post(body){
-  return fetch(API, {
+function post(body, tries){
+  tries = tries == null ? 2 : tries;
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 25000);
+
+  var opt = {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(body),
     redirect: 'follow'
-  }).then(function(r){ return r.json(); });
+  };
+  if (ctrl) opt.signal = ctrl.signal;
+
+  return fetch(API, opt)
+    .then(function(r){ clearTimeout(timer); return r.json(); })
+    .catch(function(err){
+      clearTimeout(timer);
+      // Apps Script는 첫 호출이 느려 간헐적으로 실패합니다. 한 번 더 시도합니다.
+      if (tries > 0) return post(body, tries - 1);
+      throw err;
+    });
 }
 
-function api(action, body){
+var busy = 0;
+function setBusy(on){
+  busy += on ? 1 : -1;
+  if (busy < 0) busy = 0;
+  var b = $('busy');
+  if (b) b.classList.toggle('on', busy > 0);
+}
+
+/* 화면 전환이 느껴지지 않도록 짧게 캐시합니다. 저장 후에는 clearCache()로 비웁니다. */
+var CACHE_TTL = 60000;
+var cacheStore = {};
+function cacheKey(a, b){ return a + ':' + JSON.stringify(b || {}); }
+function clearCache(){ cacheStore = {}; }
+
+function api(action, body, useCache){
   body = body || {};
+  var ck = cacheKey(action, body);
+  if (useCache) {
+    var hit = cacheStore[ck];
+    if (hit && Date.now() - hit.t < CACHE_TTL) return Promise.resolve(hit.v);
+  }
   body.action = action;
   body.token  = TOKEN;
+
+  setBusy(true);
   return post(body).then(function(d){
-    if (d && d.needLogin) { logout(); throw new Error('AUTH'); }
+    setBusy(false);
+    if (d && d.needLogin) { requireLogin(); throw new Error('AUTH'); }
     if (d && d.error)     throw new Error(d.error);
+    if (useCache) cacheStore[ck] = { t: Date.now(), v: d };
     return d;
+  }).catch(function(e){
+    setBusy(false);
+    throw e;
   });
 }
 
@@ -469,13 +517,17 @@ function showGate(){
     $('g-apiwrap').classList.remove('hide');
     $('g-toggle').classList.add('hide');
     $('g-sub').textContent = '처음이시네요. 서버 주소와 PIN을 입력하세요.';
+    setTimeout(function(){ $('g-api').focus(); }, 250);
   } else {
     $('g-sub').textContent = 'PIN을 입력하세요';
+    setTimeout(function(){ $('g-pin').focus(); }, 250);   // 바로 키패드가 뜨도록
   }
-  setTimeout(function(){ ($('g-api').value || API ? $('g-pin') : $('g-api')).focus(); }, 200);
 }
 
+var loggingIn = false;
+
 function doLogin(){
+  if (loggingIn) return;
   var wrapOpen = !$('g-apiwrap').classList.contains('hide');
   var url = (wrapOpen ? $('g-api').value : API).trim();
   var pin = $('g-pin').value.trim();
@@ -485,40 +537,71 @@ function doLogin(){
   if (!pin) { gmsg('PIN을 입력하세요'); return; }
 
   API = url.replace(/\/$/, '');
-  gmsg('확인 중…');
+  loggingIn = true;
+  $('g-btn').textContent = '확인 중…';
+  $('g-btn').disabled = true;
+  gmsg('');
 
   post({ action: 'login', pin: pin }).then(function(d){
+    loggingIn = false;
+    $('g-btn').textContent = '열기';
+    $('g-btn').disabled = false;
     if (d && d.ok) {
       TOKEN = d.token;
       localStorage.setItem('gb_api', API);
       localStorage.setItem('gb_token', TOKEN);
+      localStorage.setItem('gb_pinlen', String(pin.length));
       $('g-pin').value = '';
       gmsg('');
       enterApp();
       return;
     }
+    $('g-pin').value = '';
     if (d && d.locked)      gmsg('실패가 반복돼 잠겼습니다. ' + Math.ceil(d.waitSec/60) + '분 후 다시 시도하세요.');
     else if (d && d.noPin)  gmsg('PIN이 아직 없습니다. 시트 메뉴 [가계부] → 🔒 앱 PIN 설정에서 먼저 정하세요.');
     else                    gmsg('PIN이 맞지 않습니다.' + (d && d.remain != null ? ' 남은 시도 ' + d.remain + '회' : ''));
   }).catch(function(){
+    loggingIn = false;
+    $('g-btn').textContent = '열기';
+    $('g-btn').disabled = false;
     gmsg('서버에 연결하지 못했습니다. 주소가 정확한지 확인하세요.');
   });
 }
 
+/* 사용자가 직접 누른 잠금 */
 function logout(){
   TOKEN = '';
   localStorage.removeItem('gb_token');
+  clearCache();
   showGate();
 }
 
+/* 서버가 토큰을 거부했을 때만 게이트로 되돌립니다 (네트워크 오류로는 내보내지 않음) */
+function requireLogin(){
+  TOKEN = '';
+  localStorage.removeItem('gb_token');
+  clearCache();
+  showGate();
+  gmsg('로그인이 만료되었습니다. PIN을 다시 입력하세요.');
+}
+
 $('g-pin').addEventListener('keydown', function(e){ if (e.key === 'Enter') doLogin(); });
+$('g-api').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('g-pin').focus(); });
+
+/* 마지막으로 성공한 PIN의 길이를 기억해 두고, 그 길이를 채우면 자동으로 엽니다.
+   길이를 모르면 자동 제출하지 않습니다 — 잘못 보내면 5회 만에 잠기기 때문입니다. */
+$('g-pin').addEventListener('input', function(){
+  var known = Number(localStorage.getItem('gb_pinlen') || 0);
+  var v = $('g-pin').value.trim();
+  if (API && known && v.length === known && !loggingIn) doLogin();
+});
 
 /* ================= 부팅 ================= */
 function enterApp(){
   $('gate').classList.add('hide');
   $('app').classList.remove('hide');
 
-  api('bootstrap').then(function(b){
+  api('bootstrap', {}, true).then(function(b){
     BOOT = b;
     curMonth = b.month;
     curYear  = Number(b.month.split('-')[0]);
@@ -533,16 +616,28 @@ function enterApp(){
     renderAdd();
     renderBatchChips();
     renderBatch();
-  }).catch(fail);
+  }).catch(function(e){
+    if (String(e && e.message) === 'AUTH') return;      // 게이트로 이미 이동
+    toast('연결이 느립니다. 다시 시도하세요.');
+    $('app').classList.add('hide');
+    showGate();
+    gmsg('서버 응답이 없습니다. 잠시 후 다시 열어 주세요.');
+  });
 }
 
-/* 저장된 토큰이 아직 유효한지 확인하고 바로 진입 */
+/* 저장된 토큰이 있으면 확인을 기다리지 않고 바로 앱을 엽니다.
+   토큰이 실제로 만료됐다면 첫 요청에서 requireLogin()이 걸립니다. */
 (function init(){
   if (!API || !TOKEN) { showGate(); return; }
-  post({ action: 'ping', token: TOKEN }).then(function(d){
-    if (d && d.auth) enterApp(); else showGate();
-  }).catch(function(){ showGate(); });
+  enterApp();
 })();
+
+function refreshAll(){
+  clearCache();
+  var cur = document.querySelector('nav button.on');
+  showTab(cur ? cur.dataset.v : 'add');
+  toast('새로 불러왔습니다');
+}
 
 /* ================= 탭 ================= */
 function showTab(v){
@@ -606,6 +701,7 @@ function save(){
     method: sel.method || '', date: $('date').value, memo: $('memo').value
   }}).then(function(){
     $('amt').value = ''; $('memo').value = '';
+    clearCache();
     toast('저장되었습니다');
   }).catch(function(e){ if (String(e.message) !== 'AUTH') toast(e.message || '저장 실패'); });
 }
@@ -637,6 +733,7 @@ function saveBatch(){
   api('batch', { payload: { month: $('bmonth').value, method: sel.bmethod, rows: rows } })
     .then(function(r){
       document.querySelectorAll('#btable input').forEach(function(i){ i.value = ''; });
+      clearCache();
       toast(r.count + '건 저장되었습니다');
     }).catch(function(e){ if (String(e.message) !== 'AUTH') toast(e.message || '저장 실패'); });
 }
@@ -647,7 +744,7 @@ function loadSummary(){
   var lbl = curMonth.split('-')[0] + '년 ' + Number(curMonth.split('-')[1]) + '월';
   $('s-month').textContent = lbl + (curMonth === BOOT.month ? ' (이번 달)' : '');
 
-  api('summary', { month: curMonth }).then(function(s){
+  api('summary', { month: curMonth }, true).then(function(s){
     if (!s.income && !s.expense && !s.saving) toast(lbl + ' 기록이 없습니다');
     $('s-in').textContent     = won(s.income);
     $('s-living').textContent = won(s.living);
@@ -711,7 +808,7 @@ function setYearMode(ex){
 
 function loadYearly(){
   if (!curYear) curYear = Number(BOOT.month.split('-')[0]);
-  api('yearly', { year: curYear }).then(function(d){
+  api('yearly', { year: curYear }, true).then(function(d){
     $('y-year').textContent = d.year + '년';
 
     // '이사 제외' 모드에서는 일회성지출을 빼고 다시 계산합니다
@@ -786,7 +883,7 @@ function loadDiag(){
   $('d-month').textContent = diagMonth.split('-')[0] + '년 ' +
     Number(diagMonth.split('-')[1]) + '월 점검';
 
-  api('advice', { month: diagMonth }).then(function(d){
+  api('advice', { month: diagMonth }, true).then(function(d){
     // 핵심 항목
     $('d-items').innerHTML = d.items.map(function(it){
       return '<div class="diag ' + (it.ok ? 'good' : 'bad') + '">' +
@@ -827,7 +924,7 @@ function loadDiag(){
 
 /* ================= 이사 ================= */
 function loadMoving(){
-  api('moving').then(function(m){
+  api('moving', {}, true).then(function(m){
     var left = m.furnitureBudget - m.furniture;
     $('m-used').textContent = won(m.furniture);
     var l = $('m-left');
@@ -917,7 +1014,7 @@ function renderWish(list){
 function addWish(){
   var n = $('w-name').value.trim();
   if (!n) return;
-  api('wishAdd', { name: n }).then(function(list){
+  api('wishAdd', { name: n }).then(function(list){ clearCache();
     $('w-name').value = '';
     renderWish(list);
     toast('추가되었습니다');
@@ -931,12 +1028,12 @@ function buyWish(row, name){
   api('wishBuy', {
     row: row, amount: Number(String(a).replace(/[^0-9]/g,'')),
     method: m, date: $('date').value
-  }).then(function(){ toast('구매로 기록했습니다'); loadMoving(); }).catch(fail);
+  }).then(function(){ clearCache(); toast('구매로 기록했습니다'); loadMoving(); }).catch(fail);
 }
 
 /* ================= 내역 ================= */
 function loadLog(){
-  api('recent', { n: 25 }).then(function(rows){
+  api('recent', { n: 25 }, true).then(function(rows){
     $('log').innerHTML = rows.map(function(r){
       return '<div class="line"><span>' + r.date + ' · ' + r.cat +
              (r.memo ? ' <span class="r">' + String(r.memo).slice(0,18) + '</span>' : '') + '</span>' +
@@ -948,7 +1045,7 @@ function loadLog(){
 
 function del(id){
   if (!confirm('이 기록을 삭제할까요?')) return;
-  api('delete', { id: id }).then(function(){ toast('삭제했습니다'); loadLog(); }).catch(fail);
+  api('delete', { id: id }).then(function(){ clearCache(); toast('삭제했습니다'); loadLog(); }).catch(fail);
 }
 
 /* ================= PWA ================= */
