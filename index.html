@@ -443,6 +443,15 @@
         <span><i style="background:#a06be0"></i>일회성지출</span>
       </div>
     </div>
+
+    <div class="card">
+      <h2>올해 어디에 제일 많이 썼나</h2>
+      <div class="chips" style="margin-bottom:10px">
+        <button type="button" class="chip on" id="r-t-all" onclick="setRankMode(false)">전체 지출</button>
+        <button type="button" class="chip" id="r-t-var" onclick="setRankMode(true)">변동지출만</button>
+      </div>
+      <div id="y-rank"></div>
+    </div>
   </section>
 
   <!-- ========== 자산 ========== -->
@@ -1083,6 +1092,32 @@ function renderFocus(f){
 }
 
 /* ================= 월별 ================= */
+var rankVarOnly = false, YEAR_DATA = null;
+
+function setRankMode(v){
+  rankVarOnly = v;
+  $('r-t-all').classList.toggle('on', !v);
+  $('r-t-var').classList.toggle('on', v);
+  renderRanking();
+}
+
+function renderRanking(){
+  if (!YEAR_DATA) return;
+  var list = rankVarOnly ? (YEAR_DATA.varRanking || []) : (YEAR_DATA.ranking || []);
+  if (!list.length) { $('y-rank').innerHTML = '<div class="muted">기록이 없습니다.</div>'; return; }
+  var mx = list[0].amount || 1;
+  var tot = list.reduce(function(a,x){ return a + x.amount; }, 0);
+  $('y-rank').innerHTML = list.map(function(x, i){
+    return '<div class="rk"><div class="no' + (i===0?' n1':'') + '">' + (i+1) + '</div>' +
+      '<div class="bd"><div class="t1"><span>' + esc(x.name) + '</span>' +
+      '<b>' + won(x.amount) + '</b></div>' +
+      '<div class="mini-bar"><i style="width:' + Math.round(x.amount/mx*100) + '%"></i></div>' +
+      '<div class="t2">' + (tot ? (x.amount/tot*100).toFixed(1) + '%' : '') +
+      (x.months ? ' · ' + x.months + '개월 · 월평균 ' + won(x.avg) : '') +
+      '</div></div></div>';
+  }).join('');
+}
+
 function setYearMode(ex){
   yearExMoving = ex;
   $('y-t-all').classList.toggle('on', !ex);
@@ -1093,6 +1128,8 @@ function setYearMode(ex){
 function loadYearly(){
   if (!curYear) curYear = Number(BOOT.month.split('-')[0]);
   api('yearly', { year: curYear }, true).then(function(d){
+    YEAR_DATA = d;
+    renderRanking();
     $('y-year').textContent = d.year + '년';
 
     // '이사 제외' 모드에서는 일회성지출을 빼고 다시 계산합니다
@@ -1104,7 +1141,8 @@ function loadYearly(){
         fixed: r.fixed, vari: r.vari, once: ex ? 0 : r.once,
         saving: r.saving, expense: expense,
         balance: r.income - expense - r.saving,
-        rate: r.rate
+        rate: r.rate,
+        top: ex ? r.topVar : r.top
       };
     });
 
@@ -1130,11 +1168,13 @@ function loadYearly(){
     var max = 1;
     rows.forEach(function(r){ max = Math.max(max, r.income, r.expense); });
 
-    var h = '<tr><th>월</th><th>수입</th><th>지출</th><th>저축</th><th>잔액</th><th>저축률</th></tr>';
+    var h = '<tr><th>월<div class="t2" style="font-weight:400">최다 지출</div></th>' +
+            '<th>수입</th><th>지출</th><th>저축</th><th>잔액</th><th>저축률</th></tr>';
     rows.forEach(function(r){
       var w = function(v){ return (v / max * 100).toFixed(1); };
       h += '<tr class="yrow" onclick="jumpMonth(\'' + r.key + '\')">' +
-        '<td><b>' + r.month + '월</b></td>' +
+        '<td><b>' + r.month + '월</b>' +
+          (r.top ? '<div class="t2">' + esc(r.top.name) + '</div>' : '') + '</td>' +
         '<td class="a">' + won(r.income) + '</td>' +
         '<td class="a">' + won(r.expense) +
           '<div class="sbar">' +
