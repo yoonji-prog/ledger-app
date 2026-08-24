@@ -5,7 +5,7 @@
  * 아이콘·매니페스트처럼 잘 바뀌지 않는 파일만 캐시를 먼저 씁니다.
  * API(POST, 외부 오리진)는 캐시하지 않습니다.
  */
-const CACHE  = 'gb-v5';
+const CACHE  = 'gb-v6';
 const SHELL  = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {

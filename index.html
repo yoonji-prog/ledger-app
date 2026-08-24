@@ -763,7 +763,7 @@ function showTab(v){
     x.classList.toggle('on', x.dataset.v === v);
   });
   TABS.forEach(function(k){ $('v-'+k).classList.toggle('hide', k !== v); });
-  if (v === 'sum')  { loadSummary(); loadBudget(); loadFocus(); loadDiag(); }
+  if (v === 'sum')  reloadMonth();
   if (v === 'year') loadYearly();
   if (v === 'asset') loadAssets();
   if (v === 'move') loadMoving();
@@ -786,7 +786,20 @@ function goThisMonth(){ curMonth = BOOT.month; reloadMonth(); }
 function shiftYear(d){ curYear += d; loadYearly(); }
 function jumpMonth(key){ curMonth = key; diagMonth = key; showTab('sum'); }
 
-function reloadMonth(){ loadSummary(); loadBudget(); loadFocus(); loadDiag(); }
+/* 이달 화면은 한 번의 요청으로 모두 받아옵니다 (예전에는 네 번 불렀습니다) */
+function reloadMonth(){
+  if (!curMonth) curMonth = BOOT.dataMonth || BOOT.month;
+  var lbl = curMonth.split('-')[0] + '년 ' + Number(curMonth.split('-')[1]) + '월';
+  $('s-month').textContent = lbl + (curMonth === BOOT.month ? ' (이번 달)' : '');
+  $('d-month').textContent = Number(curMonth.split('-')[1]) + '월 점검';
+
+  api('month', { month: curMonth }, true).then(function(d){
+    renderSummary(d.summary, lbl);
+    renderBudget(d.budget);
+    renderFocus(d.focus);
+    renderDiag(d.advice);
+  }).catch(fail);
+}
 
 /* ================= 칩 ================= */
 function chips(el, items, current, onPick){
@@ -867,12 +880,8 @@ function saveBatch(){
 }
 
 /* ================= 요약 ================= */
-function loadSummary(){
-  if (!curMonth) curMonth = BOOT.month;
-  var lbl = curMonth.split('-')[0] + '년 ' + Number(curMonth.split('-')[1]) + '월';
-  $('s-month').textContent = lbl + (curMonth === BOOT.month ? ' (이번 달)' : '');
-
-  api('summary', { month: curMonth }, true).then(function(s){
+function renderSummary(s, lbl){
+  {
     if (!s.income && !s.expense && !s.saving) toast(lbl + ' 기록이 없습니다');
     $('s-in').textContent     = won(s.income);
     $('s-living').textContent = won(s.living);
@@ -923,12 +932,12 @@ function loadSummary(){
     $('s-cards').innerHTML = s.cards.map(function(c){
       return '<div class="line"><span>' + c.name + '</span><b>' + won(c.amount) + '</b></div>';
     }).join('');
-  }).catch(fail);
+  }
 }
 
 /* ================= 예산 ================= */
-function loadBudget(){
-  api('budget', { month: curMonth }, true).then(function(b){
+function renderBudget(b){
+  {
     var pct = b.total ? b.used / b.total : 0;
     $('b-txt').textContent = b.total
       ? won(b.used) + ' / ' + won(b.total) + '  (' + Math.round(pct*100) + '%)'
@@ -985,7 +994,7 @@ function loadBudget(){
           return '<div class="line"><span>' + esc(c.name) + '</span><b>' + won(c.amount) + '</b></div>';
         }).join('')
       : '';
-  }).catch(fail);
+  }
 }
 
 function editBudget(){
@@ -1001,12 +1010,12 @@ function editBudget(){
     api('configSet', { key: '월 총예산',      value: n(t) }),
     api('configSet', { key: '카드 사용 상한', value: n(c) }),
     api('configSet', { key: '현금 사용 상한', value: n(k) })
-  ]).then(function(){ clearCache(); toast('저장했습니다'); loadBudget(); }).catch(fail);
+  ]).then(function(){ clearCache(); toast('저장했습니다'); reloadMonth(); }).catch(fail);
 }
 
 /* ================= 이번 달 한눈에 ================= */
-function loadFocus(){
-  api('focus', { month: curMonth }, true).then(function(f){
+function renderFocus(f){
+  {
     $('f-verdict').textContent = f.verdict;
 
     var mx = f.top.length ? f.top[0].amount : 1;
@@ -1049,7 +1058,7 @@ function loadFocus(){
             '<b>' + won(b.amount) + '</b></div>';
         }).join('')
       : '<div class="muted">기록이 없습니다.</div>';
-  }).catch(fail);
+  }
 }
 
 /* ================= 월별 ================= */
@@ -1124,11 +1133,8 @@ function loadYearly(){
 var diagMonth = null;
 var yearExMoving = false;
 
-function loadDiag(){
-  diagMonth = curMonth || BOOT.month;
-  $('d-month').textContent = Number(diagMonth.split('-')[1]) + '월 점검';
-
-  api('advice', { month: diagMonth }, true).then(function(d){
+function renderDiag(d){
+  {
     // 핵심 항목
     $('d-items').innerHTML = d.items.map(function(it){
       return '<div class="diag ' + (it.ok ? 'good' : 'bad') + '">' +
@@ -1164,7 +1170,7 @@ function loadDiag(){
           return '<span class="tag">' + w.name + '</span>';
         }).join('') + '</div>'
       : '<div class="muted">남은 항목이 없습니다.</div>';
-  }).catch(fail);
+  }
 }
 
 /* ================= 자산 ================= */
