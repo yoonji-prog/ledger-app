@@ -129,6 +129,32 @@
   .tag{background:#fff;border:1px solid var(--line);border-radius:99px;
     padding:5px 10px;font-size:12px}
   .hint{font-size:10px;color:#9aa0a6;font-weight:400}
+  .bwrap{margin-bottom:14px}
+  .brow{display:flex;justify-content:space-between;align-items:baseline;font-size:13px}
+  .brow.small{font-size:11px;color:var(--sub);margin-top:5px}
+  .bigbar{position:relative;height:14px;background:#eef1f6;border-radius:99px;
+    overflow:hidden;margin-top:6px}
+  .bigbar i{display:block;height:100%;background:var(--accent);border-radius:99px;
+    transition:width .3s}
+  .bigbar i.w{background:var(--warn)} .bigbar i.b{background:var(--bad)}
+  .bigbar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:#1a1d21;opacity:.35}
+  .verdict{margin:0 0 12px;font-size:13px;line-height:1.55;background:#eef3fb;
+    border-left:3px solid var(--accent);padding:10px 12px;border-radius:0 8px 8px 0}
+  .sh{font-size:11px;color:var(--sub);font-weight:600;margin:16px 0 6px;
+    letter-spacing:.03em;text-transform:none}
+  .sh:first-of-type{margin-top:0}
+  .rk{display:flex;align-items:center;gap:9px;padding:7px 0}
+  .rk .no{width:18px;height:18px;border-radius:5px;background:#eef1f6;color:var(--sub);
+    font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+  .rk .no.n1{background:var(--accent);color:#fff}
+  .rk .bd{flex:1;min-width:0}
+  .rk .t1{display:flex;justify-content:space-between;font-size:13px;gap:8px}
+  .rk .t1 b{white-space:nowrap}
+  .rk .t2{font-size:11px;color:var(--sub);margin-top:1px}
+  .rk .mini-bar{height:4px;background:#eef1f6;border-radius:99px;margin-top:4px;overflow:hidden}
+  .rk .mini-bar i{display:block;height:100%;background:var(--accent)}
+  .up{color:var(--bad);font-weight:700}
+  .down{color:var(--good);font-weight:700}
   .seg{display:flex;gap:0;background:#eef1f6;border-radius:11px;padding:3px;margin-bottom:12px}
   .seg button{background:none;color:var(--sub);border-radius:9px;padding:9px;font-size:13px}
   .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -293,6 +319,21 @@
         <button class="mini ghost" onclick="shiftMonth(1)">›</button>
         <button class="mini ghost" onclick="goThisMonth()" style="margin-left:auto">이번 달</button>
       </div>
+      <div class="bwrap">
+        <div class="brow">
+          <span>예산 소진 <span class="hint" id="b-auto"></span></span>
+          <b id="b-txt">–</b>
+        </div>
+        <div class="bigbar">
+          <i id="b-fill"></i>
+          <u id="b-mark" title="오늘까지 경과"></u>
+        </div>
+        <div class="brow small">
+          <span id="b-day">–</span>
+          <b id="b-perday">–</b>
+        </div>
+      </div>
+
       <div class="kpi">
         <div><div class="l">수입</div><div class="v" id="s-in">–</div></div>
         <div><div class="l">생활 지출 <span class="hint">고정+변동</span></div>
@@ -316,6 +357,30 @@
     <div class="card">
       <h2>어디서 빠져나갔나 · 계좌 / 결제수단</h2>
       <div id="s-acct"></div>
+    </div>
+
+    <div class="card">
+      <h2>이번 달 한눈에</h2>
+      <p class="verdict" id="f-verdict">–</p>
+
+      <h3 class="sh">어디에 제일 많이 썼나</h3>
+      <div id="f-top"></div>
+
+      <h3 class="sh" id="f-cut-h">줄이면 좋은 곳</h3>
+      <div id="f-cuts"></div>
+
+      <h3 class="sh">지난달보다 늘어난 곳</h3>
+      <div id="f-up"></div>
+
+      <h3 class="sh">가장 큰 지출 5건</h3>
+      <div id="f-bigs"></div>
+    </div>
+
+    <div class="card">
+      <h2>현금 · 카드 <span class="muted">상한을 정하면 진행률이 보입니다</span></h2>
+      <div id="b-kinds"></div>
+      <div id="b-cards" style="margin-top:10px"></div>
+      <button class="ghost mini" style="margin-top:10px" onclick="editBudget()">예산 · 상한 설정</button>
     </div>
 
     <div class="card">
@@ -656,9 +721,9 @@ function enterApp(){
 
   api('bootstrap', {}, true).then(function(b){
     BOOT = b;
-    curMonth = b.month;
+    curMonth = b.dataMonth || b.month;
     curYear  = Number(b.month.split('-')[0]);
-    $('mon').textContent = b.month;
+    $('mon').textContent = curMonth + (curMonth !== b.month ? ' (최근 기록)' : '');
     $('date').value = b.today;
     $('bmonth').value = b.month;
 
@@ -698,7 +763,7 @@ function showTab(v){
     x.classList.toggle('on', x.dataset.v === v);
   });
   TABS.forEach(function(k){ $('v-'+k).classList.toggle('hide', k !== v); });
-  if (v === 'sum')  { loadSummary(); loadDiag(); }
+  if (v === 'sum')  { loadSummary(); loadBudget(); loadFocus(); loadDiag(); }
   if (v === 'year') loadYearly();
   if (v === 'asset') loadAssets();
   if (v === 'move') loadMoving();
@@ -715,11 +780,13 @@ function shiftMonth(d){
   if (m < 1)  { y--; m = 12; }
   if (m > 12) { y++; m = 1; }
   curMonth = y + '-' + ('0' + m).slice(-2);
-  loadSummary(); loadDiag();
+  reloadMonth();
 }
-function goThisMonth(){ curMonth = BOOT.month; loadSummary(); loadDiag(); }
+function goThisMonth(){ curMonth = BOOT.month; reloadMonth(); }
 function shiftYear(d){ curYear += d; loadYearly(); }
 function jumpMonth(key){ curMonth = key; diagMonth = key; showTab('sum'); }
+
+function reloadMonth(){ loadSummary(); loadBudget(); loadFocus(); loadDiag(); }
 
 /* ================= 칩 ================= */
 function chips(el, items, current, onPick){
@@ -856,6 +923,132 @@ function loadSummary(){
     $('s-cards').innerHTML = s.cards.map(function(c){
       return '<div class="line"><span>' + c.name + '</span><b>' + won(c.amount) + '</b></div>';
     }).join('');
+  }).catch(fail);
+}
+
+/* ================= 예산 ================= */
+function loadBudget(){
+  api('budget', { month: curMonth }, true).then(function(b){
+    var pct = b.total ? b.used / b.total : 0;
+    $('b-txt').textContent = b.total
+      ? won(b.used) + ' / ' + won(b.total) + '  (' + Math.round(pct*100) + '%)'
+      : '예산 미설정';
+    $('b-auto').textContent = b.total
+      ? (b.totalIsAuto ? '시트 예산 합계 기준' : '직접 설정') : '';
+
+    var fill = $('b-fill');
+    fill.style.width = Math.round(Math.min(pct, 1) * 100) + '%';
+    fill.className = pct > 1 ? 'b' : (pct >= 0.8 ? 'w' : '');
+
+    // 오늘까지 경과한 지점을 표시 — 막대가 이 선보다 앞서면 과속입니다
+    var mark = $('b-mark');
+    if (b.isCurrent) {
+      mark.style.display = '';
+      mark.style.left = Math.round(b.datePct * 100) + '%';
+    } else mark.style.display = 'none';
+
+    if (!b.total) {
+      $('b-day').textContent = '아래 버튼으로 총예산을 정하면 진행률이 보입니다.';
+      $('b-perday').textContent = '';
+    } else if (b.isCurrent) {
+      $('b-day').textContent = b.dayPassed + '/' + b.daysInMonth + '일 지남 · ' +
+        (b.remain >= 0 ? won(b.remain) + ' 남음' : won(-b.remain) + ' 초과');
+      $('b-perday').textContent = b.dayLeft > 0 && b.remain > 0
+        ? '하루 ' + won(b.perDay) + ' 가능' : '';
+    } else {
+      $('b-day').textContent = b.remain >= 0
+        ? won(b.remain) + ' 남기고 마감' : won(-b.remain) + ' 초과';
+      $('b-perday').textContent = '';
+    }
+
+    // 현금 / 카드
+    function kindRow(label, o, hint){
+      var has = o.limit > 0;
+      var p = has ? o.used / o.limit : 0;
+      return '<div style="margin-bottom:11px">' +
+        '<div class="line" style="border:0;padding:0"><span>' + label +
+        (hint ? ' <span class="hint">' + hint + '</span>' : '') + '</span>' +
+        '<span class="r">' + won(o.used) + (has ? ' / ' + won(o.limit) : '') + '</span></div>' +
+        (has ? '<div class="bar"><i class="' + (p > 1 ? 'b' : (p >= .8 ? 'w' : '')) +
+               '" style="width:' + Math.round(Math.min(p,1)*100) + '%"></i></div>' : '') +
+        '</div>';
+    }
+    var h = kindRow('카드', b.card, '다음 달 출금') + kindRow('현금·계좌', b.cash, '즉시 출금');
+    if (b.company) h += '<div class="line"><span>회사 복지카드 <span class="hint">내 돈 아님</span></span>' +
+                        '<span class="r">' + won(b.company) + '</span></div>';
+    if (b.other)   h += '<div class="line"><span>수단 미지정</span>' +
+                        '<span class="r">' + won(b.other) + '</span></div>';
+    $('b-kinds').innerHTML = h;
+
+    $('b-cards').innerHTML = b.cards.length
+      ? '<h3 class="sh">카드별</h3>' + b.cards.map(function(c){
+          return '<div class="line"><span>' + esc(c.name) + '</span><b>' + won(c.amount) + '</b></div>';
+        }).join('')
+      : '';
+  }).catch(fail);
+}
+
+function editBudget(){
+  var t = prompt('월 총예산(원)\n\n비워두면 시트의 고정+변동 예산 합계를 씁니다.', '');
+  if (t === null) return;
+  var c = prompt('카드 사용 상한(원)\n\n3개 카드 합계 기준. 다음 달 출금액이 됩니다.\n비워두면 표시하지 않습니다.', '');
+  if (c === null) return;
+  var k = prompt('현금·계좌 사용 상한(원)\n\n비워두면 표시하지 않습니다.', '');
+  if (k === null) return;
+
+  var n = function(v){ return String(v).replace(/[^0-9]/g,''); };
+  Promise.all([
+    api('configSet', { key: '월 총예산',      value: n(t) }),
+    api('configSet', { key: '카드 사용 상한', value: n(c) }),
+    api('configSet', { key: '현금 사용 상한', value: n(k) })
+  ]).then(function(){ clearCache(); toast('저장했습니다'); loadBudget(); }).catch(fail);
+}
+
+/* ================= 이번 달 한눈에 ================= */
+function loadFocus(){
+  api('focus', { month: curMonth }, true).then(function(f){
+    $('f-verdict').textContent = f.verdict;
+
+    var mx = f.top.length ? f.top[0].amount : 1;
+    $('f-top').innerHTML = f.top.length
+      ? f.top.map(function(t, i){
+          return '<div class="rk"><div class="no' + (i===0?' n1':'') + '">' + (i+1) + '</div>' +
+            '<div class="bd"><div class="t1"><span>' + esc(t.name) + '</span>' +
+            '<b>' + won(t.amount) + '</b></div>' +
+            '<div class="mini-bar"><i style="width:' + Math.round(t.amount/mx*100) + '%"></i></div>' +
+            '<div class="t2">변동지출의 ' + (t.share*100).toFixed(1) + '%</div></div></div>';
+        }).join('')
+      : '<div class="muted">기록이 없습니다.</div>';
+
+    $('f-cut-h').style.display = f.cuts.length ? '' : 'none';
+    $('f-cuts').innerHTML = f.cuts.length
+      ? f.cuts.map(function(c){
+          return '<div class="line"><span>' + esc(c.name) +
+            '<div class="t2">' + c.basis + ' ' + won(c.base) + ' → 실제 ' + won(c.actual) + '</div></span>' +
+            '<span class="up">+' + won(c.over) + '</span></div>';
+        }).join('') +
+        '<p class="muted">모두 되돌리면 ' + won(f.cutTotal) + ' 절약' +
+        (f.needForRate ? ' · 저축 목표까지 ' + won(f.needForRate) + ' 필요' : '') + '</p>'
+      : '';
+
+    $('f-up').innerHTML = f.hasPrev
+      ? (f.delta.up.length
+          ? f.delta.up.map(function(d){
+              return '<div class="line"><span>' + esc(d.name) +
+                '<div class="t2">' + won(d.before) + ' → ' + won(d.now) + '</div></span>' +
+                '<span class="' + (d.diff > 0 ? 'up' : 'down') + '">' +
+                (d.diff > 0 ? '+' : '') + won(d.diff) + '</span></div>';
+            }).join('')
+          : '<div class="muted">늘어난 항목이 없습니다.</div>')
+      : '<div class="muted">비교할 지난달 기록이 없습니다.</div>';
+
+    $('f-bigs').innerHTML = f.bigs.length
+      ? f.bigs.map(function(b){
+          return '<div class="line"><span>' + b.date + ' · ' + esc(b.cat) +
+            (b.method ? ' <span class="hint">' + esc(b.method) + '</span>' : '') + '</span>' +
+            '<b>' + won(b.amount) + '</b></div>';
+        }).join('')
+      : '<div class="muted">기록이 없습니다.</div>';
   }).catch(fail);
 }
 
